@@ -515,10 +515,24 @@ function frame(t) {
     const cy = Math.cos(-state.local.yaw), sy = Math.sin(-state.local.yaw);
     const swingLat =  cy * state.weaponTipVel.x + sy * state.weaponTipVel.z;
     const swingFwd = -sy * state.weaponTipVel.x + cy * state.weaponTipVel.z;
-    state.rig.animate(dt, { mvSpeed, swinging: state.weaponTipVel.length() > 4, blocking: !!inp.block, alive: state.local.alive, swingLat, swingFwd, crippled: (state.local.crippleMsLeft || 0) > 0 });
+    state.rig.animate(dt, {
+      mvSpeed, swinging: state.weaponTipVel.length() > 4, blocking: !!inp.block,
+      alive: state.local.alive, swingLat, swingFwd,
+      crippled: (state.local.crippleMsLeft || 0) > 0,
+      stunned:  (state.local.stunMsLeft    || 0) > 0,
+    });
     state.rig.setInvuln((state.local.invulnMs || 0) > 0, performance.now() / 1000);
     state.rig.pushTrail(state.weaponTipWorld, state.weaponTipVel.length());
 
+    // Bleed drip for local player.
+    if ((state.local.bleedMsLeft || 0) > 0) {
+      state._bleedT = (state._bleedT || 0) + dt;
+      if (state._bleedT > 0.18) {
+        state._bleedT = 0;
+        const p = state.local.pos;
+        spark(scene, { x: p.x + (Math.random() - 0.5) * 0.4, y: 0.8 + Math.random() * 0.4, z: p.z + (Math.random() - 0.5) * 0.4 }, 0.12, 0xa01515);
+      }
+    }
     // Footsteps when on ground and moving.
     if (state.local.onGround && mvSpeed > 1) {
       state.footstepPhase += dt * (mvSpeed * 0.45 + 1.5);
@@ -688,7 +702,11 @@ function interpolateRemote(r, renderTime) {
   const snapDtMs = Math.max(1, b.ts - a.ts);
   const dx = b.pos.x - a.pos.x, dz = b.pos.z - a.pos.z;
   const mvSpeed = Math.hypot(dx, dz) / (snapDtMs / 1000);
-  r.rig.animate(1 / 60, { mvSpeed, swinging: false, blocking: false, alive: !!r.alive, crippled: (r.crippleMsLeft || 0) > 0 });
+  r.rig.animate(1 / 60, {
+    mvSpeed, swinging: false, blocking: false, alive: !!r.alive,
+    crippled: (r.crippleMsLeft || 0) > 0,
+    stunned:  (r.stunMsLeft    || 0) > 0,
+  });
   r.rig.setInvuln((r.invulnMs || 0) > 0, performance.now() / 1000);
   // Estimate tip speed from snap delta to drive trail.
   const tipDx = b.weaponTip.x - a.weaponTip.x;
@@ -696,6 +714,16 @@ function interpolateRemote(r, renderTime) {
   const tipDz = b.weaponTip.z - a.weaponTip.z;
   const tipSpd = Math.hypot(tipDx, tipDy, tipDz) / Math.max(0.001, snapDtMs / 1000);
   r.rig.pushTrail(tipV, tipSpd);
+
+  // Bleed drip particles — small red puffs along the body when bleeding.
+  if (r.alive && (r.bleedMsLeft || 0) > 0) {
+    r._bleedT = (r._bleedT || 0) + 1 / 60;
+    if (r._bleedT > 0.18) {
+      r._bleedT = 0;
+      const p = r.rig.root.position;
+      spark(scene, { x: p.x + (Math.random() - 0.5) * 0.4, y: 0.8 + Math.random() * 0.4, z: p.z + (Math.random() - 0.5) * 0.4 }, 0.12, 0xa01515);
+    }
+  }
 
   // Positional footstep audio.
   if (r.alive && mvSpeed > 1) {
@@ -919,7 +947,7 @@ function loadSettings() {
 function saveSettings(s) { try { localStorage.setItem("ironyard.settings", JSON.stringify(s)); } catch {} }
 
 const SETTINGS = Object.assign({
-  volume: 55, fov: 70, sens: 100, camdist: 4.2,
+  volume: 55, fov: 70, sens: 60, camdist: 4.2,
 }, loadSettings());
 
 function applySettingsLive() {

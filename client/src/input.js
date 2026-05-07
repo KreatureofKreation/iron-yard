@@ -25,7 +25,11 @@ export class Input {
 
     this._keys = new Set();
     this._mouse = { down: false, pressed: false };
-    this._mousePos = { x: 0.5, y: 0.5 };  // normalized 0..1 on canvas
+    this._mousePos = { x: 0.5, y: 0.5 };  // normalized 0..1 on canvas (pre-lock fallback)
+    this._aimVirtX = 0;                    // -1..1 accumulator while pointer-locked
+    this._aimVirtY = 0;
+    this._pointerLocked = false;
+    this._altDown = false;
 
     this._installKeyboard();
     this._installMouse();
@@ -37,36 +41,54 @@ export class Input {
       if (e.repeat) return;
       this._keys.add(e.code);
       if (e.code === "Space") this.jump = true;
+      if (e.code === "AltLeft" || e.code === "AltRight") this._altDown = true;
     });
-    window.addEventListener("keyup", (e) => { this._keys.delete(e.code); });
-    window.addEventListener("blur", () => this._keys.clear());
+    window.addEventListener("keyup", (e) => {
+      this._keys.delete(e.code);
+      if (e.code === "AltLeft" || e.code === "AltRight") this._altDown = false;
+    });
+    window.addEventListener("blur", () => { this._keys.clear(); this._altDown = false; });
   }
 
   _installMouse() {
-    window.addEventListener("mousemove", (e) => {
-      const w = window.innerWidth, h = window.innerHeight;
-      this._mousePos.x = e.clientX / w;
-      this._mousePos.y = e.clientY / h;
+    // Pointer-lock state.
+    document.addEventListener("pointerlockchange", () => {
+      this._pointerLocked = document.pointerLockElement != null;
     });
+    // Click anywhere on the game canvas to capture the mouse.
+    const tryLock = () => {
+      const canvas = document.querySelector("#app canvas");
+      if (canvas && !this._pointerLocked) canvas.requestPointerLock?.();
+    };
     window.addEventListener("mousedown", (e) => {
       if (e.button === 0) this._mouse.down = true;
-      if (e.button === 1 || e.button === 2) {
-        this._cameraDragging = true;
-        this._lastCamX = e.clientX; this._lastCamY = e.clientY;
-        e.preventDefault();
+      // Click in the game area also requests lock (skip if clicking a button/input).
+      if (!this._pointerLocked) {
+        const tag = (e.target && e.target.tagName) || "";
+        if (tag !== "INPUT" && tag !== "BUTTON" && tag !== "LABEL") tryLock();
       }
     });
-    window.addEventListener("mouseup",   (e) => {
+    window.addEventListener("mouseup", (e) => {
       if (e.button === 0) this._mouse.down = false;
-      if (e.button === 1 || e.button === 2) this._cameraDragging = false;
     });
     window.addEventListener("mousemove", (e) => {
-      if (this._cameraDragging) {
-        const dx = e.clientX - this._lastCamX;
-        const dy = e.clientY - this._lastCamY;
-        this._lastCamX = e.clientX; this._lastCamY = e.clientY;
-        this.cameraYawDelta += dx * 0.005;
-        this.cameraPitchDelta += dy * 0.003;
+      const w = window.innerWidth, h = window.innerHeight;
+      // Pre-lock fallback: track viewport position so the menu still works.
+      this._mousePos.x = e.clientX / w;
+      this._mousePos.y = e.clientY / h;
+      if (!this._pointerLocked) return;
+      // Locked: use raw movement deltas. Sensitivity slider lives at IRONYARD_SETTINGS.sens.
+      const sens = ((window.IRONYARD_SETTINGS && window.IRONYARD_SETTINGS.sens) || 60) / 100;
+      const dx = (e.movementX || 0) * sens;
+      const dy = (e.movementY || 0) * sens;
+      // ALT held → rotate camera instead of aim.
+      if (this._altDown) {
+        this.cameraYawDelta   += dx * 0.0028;
+        this.cameraPitchDelta += dy * 0.0020;
+      } else {
+        // Tunable scale 1/900 keeps a comfortable swing rate; clamp to a soft max.
+        this._aimVirtX = clamp(this._aimVirtX + dx / 900, -1.4, 1.4);
+        this._aimVirtY = clamp(this._aimVirtY - dy / 900, -1.4, 1.4);
       }
     });
     window.addEventListener("contextmenu", (e) => e.preventDefault());
@@ -212,9 +234,14 @@ export class Input {
       // Idle on mobile when no touch — sword rests.
       this.aim.x *= 0.85;
       this.aim.y *= 0.85;
+    } else if (this._pointerLocked) {
+      // Locked desktop: aim virtual position is updated in mousemove (delta-based).
+      // Sword holds position when mouse is still — like Half Sword's stance.
+      this.aim.x = this._aimVirtX;
+      this.aim.y = this._aimVirtY;
     } else {
-      // Desktop: mouse position drives aim. Map screen → -1..1, scaled by user sensitivity.
-      const sens = ((window.IRONYARD_SETTINGS && window.IRONYARD_SETTINGS.sens) || 100) / 100;
+      // Pre-lock fallback (menu / first frames): mouse-position aim.
+      const sens = ((window.IRONYARD_SETTINGS && window.IRONYARD_SETTINGS.sens) || 60) / 100;
       const ax = (this._mousePos.x - 0.5) * 2 * sens;
       const ay = (0.5 - this._mousePos.y) * 2 * sens;
       this.aim.x = Math.max(-1.4, Math.min(1.4, ax));
@@ -252,6 +279,8 @@ export class Input {
     return out;
   }
 }
+
+function clamp(x, lo, hi) { return Math.max(lo, Math.min(hi, x)); }
 
 function makeStick(id, side) {
   const el = document.createElement("div");

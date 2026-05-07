@@ -113,7 +113,7 @@ export function buildCharacter({ color = 0x9aa0a8, accent = 0xc8a97e, isLocal = 
      * Per-frame animation update.
      * mvSpeed: 0..~7 (m/s). swinging boolean. dt seconds. blocking boolean.
      */
-    animate(dt, { mvSpeed = 0, swinging = false, blocking = false, alive = true, swingLat = 0, swingFwd = 0, crippled = false } = {}) {
+    animate(dt, { mvSpeed = 0, swinging = false, blocking = false, alive = true, swingLat = 0, swingFwd = 0, crippled = false, stunned = false } = {}) {
       anim.swayPhase += dt;
       if (alive) {
         const stride = THREE.MathUtils.clamp(mvSpeed / 5, 0, 1);
@@ -123,12 +123,24 @@ export function buildCharacter({ color = 0x9aa0a8, accent = 0xc8a97e, isLocal = 
         legR.rotation.x = -Math.sin(phase) * 0.7 * stride;
         armL.rotation.x = -Math.sin(phase) * 0.5 * stride;
         if (crippled) {
-          // Drag the right leg, lean left.
           legR.rotation.x = Math.max(-0.2, legR.rotation.x);
           legR.rotation.z = 0.25;
           torso.rotation.z += 0.10;
         } else {
           legR.rotation.z = 0;
+        }
+        if (stunned) {
+          // Wobble: jelly torso, drooped arms, legs spread.
+          const wob = Math.sin(anim.swayPhase * 6.0) * 0.18;
+          torso.rotation.z += wob;
+          torso.rotation.x += Math.sin(anim.swayPhase * 5.0) * 0.10;
+          armL.rotation.x = 0;
+          legL.rotation.x = 0;
+          legR.rotation.x = 0;
+          legL.rotation.z = -0.15;
+          legR.rotation.z =  0.15;
+        } else {
+          legL.rotation.z = 0;
         }
         // Idle torso sway + body lean from swing motion (limb weight).
         const idleSway = Math.sin(anim.swayPhase * 1.2) * 0.02;

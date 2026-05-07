@@ -99,9 +99,22 @@ export function botInput(bot, players, nowMs) {
   const approach = (tvx * (-tipToBotX) + tvz * (-tipToBotZ)) / Math.max(0.01, tipDist);
   const threat = (tune.dodgeFactor > 0) && (tipSpd > (5 / Math.max(0.3, tune.dodgeFactor))) && (tipDist < 2.5) && (approach > 2 / Math.max(0.3, tune.dodgeFactor));
 
+  // Status-aware tweaks: target is helpless if stunned → press the attack hard.
+  // If bot is bleeding heavily (hp+bleed-rate suggests it'll die soon), back off.
+  const now = nowMs;
+  const targetStunned = (target.stunUntilMs || 0) > now;
+  const botBleedingBad = bot.bleedDmgPerSec > 6 && bot.hp < 60 && (bot.bleedUntilMs || 0) > now + 1000;
+
   // Movement decision.
   let mv = { x: 0, y: 0 };
-  if (threat) {
+  if (botBleedingBad) {
+    // Retreat — try to stay out of reach to let bleed expire.
+    mv.y = -1;
+    mv.x = Math.sin(now / 350 + bot.id) * 0.6;
+  } else if (targetStunned) {
+    // Press the attack — close in even if "in range" already, no strafe.
+    mv.y = dist > engage * 0.7 ? 1 : 0.5;
+  } else if (threat) {
     // Sidestep perpendicular to attacker's tip-velocity vector.
     const px = -tvz, pz = tvx;
     const m = Math.hypot(px, pz) || 1;
