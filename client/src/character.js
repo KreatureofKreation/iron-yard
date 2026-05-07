@@ -157,6 +157,9 @@ export function buildCharacter({ color = 0x9aa0a8, accent = 0xc8a97e, isLocal = 
       elbow.rotation.x = 0.20 + bend * 0.55;
       anim.swayPhase += dt;
       if (alive) {
+        // Idle breathing: subtle vertical scale on the torso when not moving.
+        const breath = (1 - Math.min(1, mvSpeed)) * 0.025 * Math.sin(anim.swayPhase * 1.6);
+        torso.scale.y = 1 + breath;
         const stride = THREE.MathUtils.clamp(mvSpeed / 5, 0, 1);
         anim.walkPhase += dt * (4 + mvSpeed * 1.2) * stride;
         const phase = anim.walkPhase;
@@ -193,8 +196,11 @@ export function buildCharacter({ color = 0x9aa0a8, accent = 0xc8a97e, isLocal = 
         torso.position.y = height * 0.55 + Math.sin(phase * 2) * 0.02 * stride;
         // Hips counter-rotate during big swings — exaggerated wind-up feel.
         hips.rotation.y = -anim.leanZ * 1.2;
-        // Also yaw the hips slightly forward/back from swing direction so the wind-up reads.
         hips.rotation.x = -anim.leanX * 0.4;
+        // Foot stagger: lead leg shifts when winding up laterally.
+        const stagger = Math.max(-0.2, Math.min(0.2, anim.leanZ * 0.8));
+        legL.position.z = stagger * 0.20;
+        legR.position.z = -stagger * 0.20;
         // Block stance — slight hunch.
         if (blocking) {
           torso.rotation.x += 0.10;
