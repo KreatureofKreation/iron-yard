@@ -64,11 +64,13 @@ export class Room {
     p.weaponTip = { ...startTip };
     p.weaponTipPrev = { ...startTip };
     this.physics.attachSword(p.id, w.mass, w.length, startTip);
+    this.physics.attachBody(p.id, p.pos);
   }
 
   removePlayer(id) {
     this.players.delete(id);
     this.physics.detachSword(id);
+    this.physics.detachBody(id);
     for (const p of this.players.values()) {
       p.lastHitAtMs.delete(id);
       p.parryUntilMs.delete(id);
@@ -182,9 +184,11 @@ export class Room {
       p.weaponTipTarget = { x: p.weaponTip.x, y: p.weaponTip.y, z: p.weaponTip.z };
     }
 
-    // 2) Drive each sword body toward its target, step the world.
+    // 2) Sync each player's kinematic body capsule to their current pos, drive sword,
+    //    then step the world (which raises collision events from the queue).
     for (const p of this.players.values()) {
       if (p.zombieUntilMs > now) continue;
+      this.physics.setBodyPos(p.id, p.pos);
       this.physics.driveSword(p.id, p.weaponTipTarget, dt);
     }
     this.physics.step();
@@ -261,7 +265,7 @@ export class Room {
         this.pendingHits.push({ kind: "matchStart", round: this.roundIndex, roundEndsAt: this.roundEndsAt });
       }
     } else if (this.matchPhase === "playing") {
-      const hits = resolveHits(this.players, now);
+      const hits = resolveHits(this.players, now, this.physics);
       if (hits.length) {
         this.pendingHits.push(...hits);
         for (const e of hits) {

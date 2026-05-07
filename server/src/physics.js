@@ -10,6 +10,14 @@
 
 import RAPIER from "@dimforge/rapier3d-compat";
 
+// Collision groups: lower 16 bits = membership, upper 16 = filter.
+// SWORD bodies hit BODY capsules and other SWORDs. BODY capsules only collide with SWORDs
+// (so players don't push each other through walls).
+const GROUP_BODY  = 0x0001;
+const GROUP_SWORD = 0x0002;
+const GROUPS_BODY_COLLIDER  = (GROUP_BODY  << 16) | GROUP_SWORD;
+const GROUPS_SWORD_COLLIDER = (GROUP_SWORD << 16) | (GROUP_BODY | GROUP_SWORD);
+
 let initialized = false;
 
 export async function initRapier() {
@@ -23,7 +31,41 @@ export function isRapierReady() { return initialized; }
 export class PhysicsWorld {
   constructor() {
     this.world = new RAPIER.World({ x: 0, y: -18, z: 0 });
-    this.swords = new Map();   // playerId -> { body, weaponMass, length }
+    this.eventQueue = new RAPIER.EventQueue(true);
+    this.swords = new Map();         // playerId -> { body, collider, weaponMass, length }
+    this.bodies = new Map();         // playerId -> { body, collider }
+    this.colliderToPlayerSword = new Map();  // colliderHandle -> playerId (attacker)
+    this.colliderToPlayerBody  = new Map();  // colliderHandle -> playerId (victim)
+    // Per-tick contact register: attackerId -> { victimId -> impactSpeed }
+    this._contacts = new Map();
+  }
+
+  attachBody(playerId, pos) {
+    if (this.bodies.has(playerId)) this.detachBody(playerId);
+    const desc = RAPIER.RigidBodyDesc.kinematicPositionBased()
+      .setTranslation(pos.x, pos.y + 0.9, pos.z);
+    const body = this.world.createRigidBody(desc);
+    const cd = RAPIER.ColliderDesc.capsule(0.5, 0.4)
+      .setCollisionGroups(GROUPS_BODY_COLLIDER)
+      .setActiveEvents(RAPIER.ActiveEvents.COLLISION_EVENTS);
+    const collider = this.world.createCollider(cd, body);
+    this.bodies.set(playerId, { body, collider });
+    this.colliderToPlayerBody.set(collider.handle, playerId);
+    return body;
+  }
+
+  detachBody(playerId) {
+    const b = this.bodies.get(playerId);
+    if (!b) return;
+    this.colliderToPlayerBody.delete(b.collider.handle);
+    this.world.removeRigidBody(b.body);
+    this.bodies.delete(playerId);
+  }
+
+  setBodyPos(playerId, pos) {
+    const b = this.bodies.get(playerId);
+    if (!b) return;
+    b.body.setNextKinematicTranslation({ x: pos.x, y: pos.y + 0.9, z: pos.z });
   }
 
   attachSword(playerId, weaponMass, length, startPos = { x: 0, y: 1.4, z: 0 }) {
@@ -37,23 +79,27 @@ export class PhysicsWorld {
     const body = this.world.createRigidBody(desc);
     const radius = 0.05;
     const halfLen = Math.max(0.05, length / 2 - radius);
-    // Sensor collider with high density → Rapier-computed body mass roughly matches
-    // weaponMass without divide-by-zero issues. Mass scaling for damage/feel is then
-    // handled by reading body.mass() in driveSword.
+    // Solid (non-sensor) collider with collision groups so swords physically interact
+    // with player bodies and other swords. Density tuned so Rapier-computed mass ≈ weaponMass.
     const cd = RAPIER.ColliderDesc.capsule(halfLen, radius)
-      .setDensity(weaponMass * 220)        // tuned so body.mass() ≈ weaponMass
-      .setSensor(true);
-    this.world.createCollider(cd, body);
+      .setDensity(weaponMass * 220)
+      .setRestitution(0.05)
+      .setFriction(0.4)
+      .setCollisionGroups(GROUPS_SWORD_COLLIDER)
+      .setActiveEvents(RAPIER.ActiveEvents.COLLISION_EVENTS);
+    const collider = this.world.createCollider(cd, body);
     if (process.env.DEBUG_PHYS) {
       console.log(`[phys] sword id=${playerId} mass=${body.mass().toFixed(2)} len=${length}`);
     }
-    this.swords.set(playerId, { body, weaponMass, length });
+    this.swords.set(playerId, { body, collider, weaponMass, length });
+    this.colliderToPlayerSword.set(collider.handle, playerId);
     return body;
   }
 
   detachSword(playerId) {
     const sw = this.swords.get(playerId);
     if (!sw) return;
+    if (sw.collider) this.colliderToPlayerSword.delete(sw.collider.handle);
     this.world.removeRigidBody(sw.body);
     this.swords.delete(playerId);
   }
@@ -79,7 +125,58 @@ export class PhysicsWorld {
     sw.body.applyImpulse({ x: ax * im, y: ay * im, z: az * im }, true);
   }
 
-  step() { this.world.step(); }
+  // Steps the world and drains collision-start events into a per-tick contact register.
+  // After step(): call drainContacts() to consume {attackerId, victimId, impactSpeed}.
+  step() {
+    this._contacts.clear();
+    this.world.step(this.eventQueue);
+    this.eventQueue.drainCollisionEvents((h1, h2, started) => {
+      if (!started) return;
+      // Identify which side is sword and which is body (or sword vs sword).
+      const sw1 = this.colliderToPlayerSword.get(h1);
+      const sw2 = this.colliderToPlayerSword.get(h2);
+      const bd1 = this.colliderToPlayerBody.get(h1);
+      const bd2 = this.colliderToPlayerBody.get(h2);
+
+      if (sw1 != null && bd2 != null && sw1 !== bd2) this._stampContact(sw1, bd2);
+      if (sw2 != null && bd1 != null && sw2 !== bd1) this._stampContact(sw2, bd1);
+      if (sw1 != null && sw2 != null && sw1 !== sw2) {
+        // Sword-vs-sword clash. Impulse exchange handled by Rapier; we still surface event.
+        this._stampClash(sw1, sw2);
+      }
+    });
+  }
+
+  _stampContact(attackerId, victimId) {
+    const sw = this.swords.get(attackerId);
+    if (!sw) return;
+    const v = sw.body.linvel();
+    const speed = Math.hypot(v.x, v.y, v.z);
+    let m = this._contacts.get(attackerId);
+    if (!m) { m = new Map(); this._contacts.set(attackerId, m); }
+    const prev = m.get(victimId) || 0;
+    if (speed > prev) m.set(victimId, speed);
+  }
+  _stampClash(a, b) {
+    const sa = this.swords.get(a), sb = this.swords.get(b);
+    if (!sa || !sb) return;
+    const va = sa.body.linvel(), vb = sb.body.linvel();
+    const sp = Math.hypot(va.x - vb.x, va.y - vb.y, va.z - vb.z);
+    if (!this._clashes) this._clashes = [];
+    this._clashes.push({ a, b, speed: sp });
+  }
+  drainContacts() {
+    const out = [];
+    for (const [attackerId, vmap] of this._contacts) {
+      for (const [victimId, speed] of vmap) out.push({ attackerId, victimId, speed });
+    }
+    return out;
+  }
+  drainPhysicsClashes() {
+    const out = this._clashes || [];
+    this._clashes = [];
+    return out;
+  }
 
   swordState(playerId) {
     const sw = this.swords.get(playerId);
