@@ -112,7 +112,11 @@ export class Room {
   ensureBots() {
     const humans = this.countHumans();
     let bots = this.countBots();
-    let desired = humans > 0 ? Math.min(BOT_TARGET, CONFIG.MAX_PLAYERS - humans) : 0;
+    // 0 humans → no bots (server idle).
+    // 1 human → keep BOT_TARGET bots so solo play isn't empty.
+    // 2+ humans → kick all bots (humans want to fight each other).
+    let desired = 0;
+    if (humans === 1) desired = Math.min(BOT_TARGET, CONFIG.MAX_PLAYERS - humans);
     while (bots < desired && this.players.size < CONFIG.MAX_PLAYERS) { this.addBot(); bots++; }
     while (bots > desired) { if (this.removeOneBot() == null) break; bots--; }
   }

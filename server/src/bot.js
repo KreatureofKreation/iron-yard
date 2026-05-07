@@ -13,9 +13,9 @@ const WEAPONS = ["arming", "longsword", "mace", "spear"];
 // Difficulty tunings: hz scales swing rate; aimSlop adds noise to facing; dodgeFactor scales
 // the threat-detection threshold (lower = dodges more); strafeBoost when in range.
 const BOT_DIFFICULTY = {
-  easy:   { swingHz: 3, aimSlop: 0.45, dodgeFactor: 0.0, strafeBoost: 0.3, blockChance: 0.25, hesitationMs: 700 },
-  medium: { swingHz: 5, aimSlop: 0.20, dodgeFactor: 0.4, strafeBoost: 0.5, blockChance: 0.55, hesitationMs: 350 },
-  hard:   { swingHz: 7, aimSlop: 0.08, dodgeFactor: 0.8, strafeBoost: 0.7, blockChance: 0.80, hesitationMs: 100 },
+  easy:   { swingHz: 2, aimSlop: 0.55, dodgeFactor: 0.0, strafeBoost: 0.25, blockChance: 0.20, hesitationMs: 1100 },
+  medium: { swingHz: 3, aimSlop: 0.30, dodgeFactor: 0.3, strafeBoost: 0.40, blockChance: 0.45, hesitationMs: 600 },
+  hard:   { swingHz: 5, aimSlop: 0.15, dodgeFactor: 0.6, strafeBoost: 0.60, blockChance: 0.70, hesitationMs: 250 },
 };
 export function botDifficultyTuning(level = "medium") {
   return BOT_DIFFICULTY[level] || BOT_DIFFICULTY.medium;

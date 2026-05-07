@@ -576,8 +576,8 @@ function frame(t) {
     state.weaponTipPrev.copy(state.weaponTipWorld);
     computeWeaponTip(inp.aim, state.local.pos, state.local.yaw, RUNTIME.weapon.length, state.weaponTipTarget);
     const wMass = RUNTIME.weapon.mass || 1.0;
-    // Higher mass → slower convergence. Base 22 / mass.
-    const k = Math.min(1, dt * (22 / wMass));
+    // Higher mass → slower convergence. Lower base = heavier overall feel.
+    const k = Math.min(1, dt * (12 / wMass));
     state.weaponTipWorld.lerp(state.weaponTipTarget, k);
     state.weaponTipVel.subVectors(state.weaponTipWorld, state.weaponTipPrev).divideScalar(Math.max(dt, 1 / 240));
 
@@ -1067,7 +1067,7 @@ function loadSettings() {
 function saveSettings(s) { try { localStorage.setItem("ironyard.settings", JSON.stringify(s)); } catch {} }
 
 const SETTINGS = Object.assign({
-  volume: 55, fov: 70, sens: 60, camdist: 4.2,
+  volume: 55, fov: 70, sens: 40, camdist: 4.2,
 }, loadSettings());
 
 function applySettingsLive() {

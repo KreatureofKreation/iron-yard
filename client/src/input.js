@@ -88,14 +88,14 @@ export class Input {
       const sens = ((window.IRONYARD_SETTINGS && window.IRONYARD_SETTINGS.sens) || 60) / 100;
       const dx = (e.movementX || 0) * sens;
       const dy = (e.movementY || 0) * sens;
-      // ALT held → rotate camera instead of aim.
+      // ALT held → rotate camera instead of aim. Less sensitive than aim.
       if (this._altDown) {
-        this.cameraYawDelta   += dx * 0.0028;
-        this.cameraPitchDelta += dy * 0.0020;
+        this.cameraYawDelta   += dx * 0.0016;
+        this.cameraPitchDelta += dy * 0.0012;
       } else {
-        // Tunable scale 1/900 keeps a comfortable swing rate; clamp to a soft max.
-        this._aimVirtX = clamp(this._aimVirtX + dx / 900, -1.4, 1.4);
-        this._aimVirtY = clamp(this._aimVirtY - dy / 900, -1.4, 1.4);
+        // Higher divisor = less reactive aim. Scaled by sens slider.
+        this._aimVirtX = clamp(this._aimVirtX + dx / 1500, -1.4, 1.4);
+        this._aimVirtY = clamp(this._aimVirtY - dy / 1500, -1.4, 1.4);
       }
     });
     window.addEventListener("contextmenu", (e) => e.preventDefault());
