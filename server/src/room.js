@@ -260,6 +260,32 @@ export class Room {
       }
     }
 
+    // Pick up an enemy's dropped sword (stunned/disarmed/dead owner). Walking near
+    // it swaps your weapon-type to theirs.
+    for (const p of this.players.values()) {
+      if (!p.alive || p.bot) {
+        if (!p.alive) continue;
+      }
+      if (now < p.stunUntilMs || now < p.disarmedUntilMs) continue;
+      if ((p.lastPickupAtMs || 0) > now - 1000) continue;
+      for (const q of this.players.values()) {
+        if (q === p) continue;
+        const qDropped = !q.alive || now < q.stunUntilMs || now < q.disarmedUntilMs;
+        if (!qDropped) continue;
+        const sw = this.physics.swordState(q.id);
+        if (!sw) continue;
+        const dx = sw.pos.x - p.pos.x, dz = sw.pos.z - p.pos.z;
+        if (dx * dx + dz * dz > 1.0) continue;
+        if (p.weaponKey === q.weaponKey) continue;
+        p.weaponKey = q.weaponKey;
+        p.lastPickupAtMs = now;
+        const w = weaponOf(p);
+        this.physics.swapWeapon(p.id, w.mass, w.length);
+        this.pendingHits.push({ kind: "pickup", id: p.id, weapon: q.weaponKey, at: { x: sw.pos.x, y: 0, z: sw.pos.z } });
+        break;
+      }
+    }
+
     // Weapon-rack pickups.
     const racks = weaponRacks();
     for (const p of this.players.values()) {
