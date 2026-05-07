@@ -6,6 +6,7 @@ import { buildScene } from "./scene.js";
 import { buildCharacter, WEAPON_LIST } from "./character.js";
 import { HUD } from "./hud.js";
 import * as SFX from "./audio.js";
+import { initRapier, rapierStep, createRagdoll, tickRagdolls, clearAllRagdolls } from "./ragdoll.js";
 
 // ---------- Renderer / scene ----------
 const renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -211,8 +212,8 @@ net.on("snap", (m) => {
       if (!wasAlive && p.alive) {
         state.local.pos.set(p.pos.x, p.pos.y, p.pos.z);
         state.local.vel.set(0, 0, 0);
-        // Restore helmet on the local rig if it was hidden by a previous head-kill.
         if (state.rig?.parts?.helm) state.rig.parts.helm.visible = true;
+        if (state.rig?.root) state.rig.root.visible = true;
       }
       continue;
     }
@@ -238,8 +239,11 @@ net.on("snap", (m) => {
     r.invulnMs = p.invulnMs || 0;
     r.crippleMsLeft = p.crippleMsLeft || 0;
     r.stamina = p.stamina ?? 100;
-    // Restore detached helm on remote respawn.
-    if (!wasAliveR && p.alive && r.rig?.parts?.helm) r.rig.parts.helm.visible = true;
+    // Restore detached helm + rig visibility on remote respawn.
+    if (!wasAliveR && p.alive) {
+      if (r.rig?.parts?.helm) r.rig.parts.helm.visible = true;
+      if (r.rig?.root) r.rig.root.visible = true;
+    }
     if (r.buf.length > 30) r.buf.shift();
     r.hp = p.hp;
     r.alive = p.alive;
@@ -291,6 +295,22 @@ net.on("hit", (m) => {
     const z = m.zone === "head" ? " ⊕ HEAD" : m.zone === "legs" ? " ⊥ LEGS" : "";
     HUD.killFeed(`${a} ⚔ ${b} ${wpn}${z}`);
     if (m.from === state.myId) state.shake.mag = Math.max(state.shake.mag, 0.10);
+    // Spawn ragdoll for the victim and hide their kinematic rig.
+    const victim = m.to === state.myId ? null : state.remotes.get(m.to);
+    const victimPos = victim ? victim.rig.root.position
+                              : state.local.pos;
+    const yaw = victim ? victim.rig.root.rotation.y : state.local.yaw;
+    const pal = paletteFor(m.to);
+    // Impulse direction: from attacker → victim.
+    const attacker = m.from === state.myId ? { rig: state.rig, pos: state.local.pos } : state.remotes.get(m.from);
+    const ax = attacker?.rig?.root?.position?.x ?? attacker?.pos?.x ?? 0;
+    const az = attacker?.rig?.root?.position?.z ?? attacker?.pos?.z ?? 0;
+    const dx = victimPos.x - ax, dz = victimPos.z - az;
+    const dl = Math.hypot(dx, dz) || 1;
+    const impulse = { x: dx / dl, y: 0, z: dz / dl };
+    createRagdoll(scene, { x: victimPos.x, y: 0, z: victimPos.z }, yaw, pal.color, pal.accent, impulse);
+    if (victim) victim.rig.root.visible = false;
+    else if (state.rig) state.rig.root.visible = false;
   } else if (m.zone === "head") {
     HUD.killFeed(`⊕ headshot ${nameFor(m.from)} → ${nameFor(m.to)} (${m.dmg})`);
   }
@@ -603,6 +623,10 @@ function frame(t) {
     camera.position.z += (Math.random() - 0.5) * m;
     if (m < 0.01) state.shake.mag = 0;
   }
+
+  // Physics tick (ragdolls).
+  rapierStep(dt);
+  tickRagdolls();
 
   HUD.setStance(stanceLabel(inp));
   updateNameplates();
@@ -920,6 +944,8 @@ bindSlider("set-camdist","camdist", (v) => v.toFixed(1));
 async function play() {
   SFX.unlockAudio();   // first user gesture — required for Web Audio
   SFX.click();
+  // Init Rapier physics (client-side ragdolls). Idempotent — safe to await each PLAY.
+  try { await initRapier(); } catch (e) { console.warn("rapier init failed:", e); }
   const name = nameInput.value.trim() || autoName();
   localStorage.setItem("ironyard.name", name);
   const url = serverInput.value.trim() || autoServerUrl();
