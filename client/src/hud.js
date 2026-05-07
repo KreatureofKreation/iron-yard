@@ -19,6 +19,22 @@ export const HUD = {
     const el = document.getElementById("stance");
     if (el) el.textContent = label;
   },
+  setDamageTotals(dealt, taken) {
+    let el = document.getElementById("dmg-totals");
+    if (!el) {
+      el = document.createElement("div");
+      el.id = "dmg-totals";
+      Object.assign(el.style, {
+        position: "absolute", left: "calc(50% - 240px)", top: "8px",
+        background: "rgba(0,0,0,0.55)", border: "1px solid #333", borderRadius: "3px",
+        padding: ".25rem .6rem", fontSize: ".8rem",
+        fontFamily: "ui-monospace, SFMono-Regular, monospace",
+        color: "#bbb", pointerEvents: "none",
+      });
+      document.getElementById("hud")?.append(el);
+    }
+    el.innerHTML = `<span style="color:#ffd060;">↑${dealt}</span> · <span style="color:#ff7070;">↓${taken}</span>`;
+  },
   // Show active status badges (stun/bleed/cripple) and an overlay tint when stunned.
   setStatus({ stun = 0, bleed = 0, cripple = 0 }) {
     let bar = document.getElementById("status-bar");

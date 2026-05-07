@@ -190,6 +190,16 @@ net.on("welcome", (m) => {
   for (const r of state.remotes.values()) scene.add(r.rig.root);
   HUD.setHp(state.local.hp, RUNTIME.player.hp);
   HUD.log(`welcome to the yard — ${state.weaponKey}`);
+  // Controls onboarding (first time only).
+  if (!localStorage.getItem("ironyard.onboarded")) {
+    const isTouch = matchMedia("(hover: none) and (pointer: coarse)").matches;
+    const ctrls = isTouch
+      ? "left stick = move · right stick = sword<br>JUMP / RUN / BLOCK buttons · ◄ ► rotate camera<br>walk into ◯ rings to swap weapons"
+      : "WASD = move · mouse = sword direction · F = block<br>shift = sprint · space = jump · click to lock cursor<br>ALT + mouse = rotate camera · scroll = zoom<br>walk into ◯ rings to swap weapons";
+    HUD.showBanner(`<div style="font-size:1.0rem; line-height:1.5;">${ctrls}</div>
+      <div style="font-size:.7rem; opacity:.5; margin-top:.6rem;">closing in 8s</div>`, 8000);
+    localStorage.setItem("ironyard.onboarded", "1");
+  }
 });
 
 net.on("snap", (m) => {
@@ -354,7 +364,15 @@ net.on("hit", (m) => {
   }
   // Track personal stats + remember killer for spectator camera.
   if (m.from === state.myId && m.kill) statsBump("kills");
-  if (m.to   === state.myId && m.kill) {
+  if (m.from === state.myId && m.dmg > 0) {
+    state._dmgDealt = (state._dmgDealt || 0) + m.dmg;
+    HUD.setDamageTotals(state._dmgDealt, state._dmgTaken || 0);
+  }
+  if (m.to === state.myId && m.dmg > 0) {
+    state._dmgTaken = (state._dmgTaken || 0) + m.dmg;
+    HUD.setDamageTotals(state._dmgDealt || 0, state._dmgTaken);
+  }
+  if (m.to === state.myId && m.kill) {
     statsBump("deaths");
     state.spectatorTargetId = m.from;
     state.spectatorOrbitT = 0;

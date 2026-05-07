@@ -78,13 +78,19 @@ export function buildCharacter({ color = 0x9aa0a8, accent = 0xc8a97e, isLocal = 
   tipNode.position.y = w.gripLen + w.bladeLen;
   sword.add(tipNode);
 
-  // Trail: ribbon of recent tip world positions (drawn as a Line strip).
+  // Trail: ribbon of recent tip world positions (drawn as a Line strip). Color by weapon.
+  const TRAIL_COLOR = {
+    arming:    0xfff0c0,   // pale gold (slash)
+    longsword: 0xfff0c0,   // pale gold (slash)
+    mace:      0xff9050,   // orange (blunt)
+    spear:     0xa8e6ff,   // pale blue (pierce)
+  }[weaponKey] ?? 0xfff0c0;
   const TRAIL_LEN = 14;
   const trailPts = new Float32Array(TRAIL_LEN * 3);
   const trailGeo = new THREE.BufferGeometry();
   trailGeo.setAttribute("position", new THREE.BufferAttribute(trailPts, 3));
   trailGeo.setDrawRange(0, 0);
-  const trailMat = new THREE.LineBasicMaterial({ color: 0xfff0c0, transparent: true, opacity: 0 });
+  const trailMat = new THREE.LineBasicMaterial({ color: TRAIL_COLOR, transparent: true, opacity: 0 });
   const trail = new THREE.Line(trailGeo, trailMat);
   trail.frustumCulled = false;
 

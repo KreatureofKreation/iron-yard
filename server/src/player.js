@@ -214,7 +214,12 @@ export function maybeRespawn(p, spawn, nowMs) {
   p.bleedDmgPerSec = 0;
   p.bleedAccum = 0;
   p.alive = true;
-  p.spawnedAtMs = nowMs;
+  // Anti-spawn-camp: if we died very quickly after our last respawn, extend invuln by
+  // 1.5s. Setting spawnedAtMs into the future stretches the (now - spawnedAtMs < window)
+  // check, giving 3s effective invuln total.
+  const justSpawnedRecently = p._lastSpawnedRealMs && (nowMs - p._lastSpawnedRealMs) < 3000;
+  p._lastSpawnedRealMs = nowMs;
+  p.spawnedAtMs = justSpawnedRecently ? (nowMs + 1500) : nowMs;
   p.lastHitAtMs.clear();
   p.parryUntilMs.clear();
   return true;
