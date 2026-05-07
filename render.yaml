@@ -1,0 +1,20 @@
+# Render.com Blueprint. Push to GitHub, point Render at the repo, and it provisions
+# a Web Service from this file. Free tier supports WS but spins down after 15 min idle.
+
+services:
+  - type: web
+    name: iron-yard
+    runtime: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    autoDeploy: true
+    healthCheckPath: /
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 8080
+      - key: BOT_COUNT
+        value: "1"
+      - key: BOT_DIFFICULTY
+        value: medium

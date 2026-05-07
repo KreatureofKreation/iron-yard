@@ -1,0 +1,13 @@
+{
+  "name": "ironyard",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Browser multiplayer physics medieval combat — first draft",
+  "workspaces": ["client", "server"],
+  "scripts": {
+    "install:all": "npm --prefix server install && npm --prefix client install",
+    "dev:server": "npm --prefix server run dev",
+    "dev:client": "npm --prefix client run dev",
+    "dev": "node scripts/dev.js"
+  }
+}

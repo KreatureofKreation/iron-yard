@@ -1,0 +1,161 @@
+// Server-side AI opponent. Generates an "input" message each tick and lets applyInput
+// run it through the same pipeline as a human player. Intentionally simple to be readable.
+
+import { CONFIG } from "./config.js";
+import { weaponOf } from "./player.js";
+
+const BOT_NAMES = [
+  "old gareth", "iron jen", "dunmar", "training dummy",
+  "ash-walker", "fenric", "halgrim", "boar of varn",
+];
+const WEAPONS = ["arming", "longsword", "mace", "spear"];
+
+// Difficulty tunings: hz scales swing rate; aimSlop adds noise to facing; dodgeFactor scales
+// the threat-detection threshold (lower = dodges more); strafeBoost when in range.
+const BOT_DIFFICULTY = {
+  easy:   { swingHz: 4, aimSlop: 0.30, dodgeFactor: 0.0, strafeBoost: 0.4, blockChance: 0.4 },
+  medium: { swingHz: 7, aimSlop: 0.10, dodgeFactor: 0.6, strafeBoost: 0.6, blockChance: 0.7 },
+  hard:   { swingHz: 9, aimSlop: 0.04, dodgeFactor: 1.0, strafeBoost: 0.8, blockChance: 0.85 },
+};
+export function botDifficultyTuning(level = "medium") {
+  return BOT_DIFFICULTY[level] || BOT_DIFFICULTY.medium;
+}
+
+export function pickBotName(existing) {
+  const used = new Set([...existing.values()].map(p => p.name));
+  for (const n of BOT_NAMES) if (!used.has(`[bot] ${n}`)) return n;
+  return BOT_NAMES[(Math.random() * BOT_NAMES.length) | 0];
+}
+
+export function pickBotWeapon() {
+  return WEAPONS[(Math.random() * WEAPONS.length) | 0];
+}
+
+// Pick the closest alive player that isn't us.
+function findTarget(bot, players) {
+  let best = null;
+  let bestD = Infinity;
+  for (const p of players.values()) {
+    if (p === bot || !p.alive) continue;
+    const d = Math.hypot(p.pos.x - bot.pos.x, p.pos.z - bot.pos.z);
+    if (d < bestD) { bestD = d; best = p; }
+  }
+  return best ? { p: best, dist: bestD } : null;
+}
+
+// Stuck detection: track each bot's recent positions; if not progressing, jitter.
+function detectStuck(bot, nowMs) {
+  if (!bot._stuckMem) bot._stuckMem = { lastPos: { x: bot.pos.x, z: bot.pos.z }, lastSampleMs: nowMs, stuck: 0 };
+  const m = bot._stuckMem;
+  if (nowMs - m.lastSampleMs > 250) {
+    const dx = bot.pos.x - m.lastPos.x;
+    const dz = bot.pos.z - m.lastPos.z;
+    const dist = Math.hypot(dx, dz);
+    // < 0.15m progress in 250ms while trying to move = stuck.
+    if (dist < 0.15) m.stuck++;
+    else m.stuck = 0;
+    m.lastPos.x = bot.pos.x; m.lastPos.z = bot.pos.z;
+    m.lastSampleMs = nowMs;
+  }
+  return m.stuck;
+}
+
+// Generate one tick's input for the bot.
+export function botInput(bot, players, nowMs) {
+  const t = findTarget(bot, players);
+  if (!t) {
+    return { seq: 0, mv: { x: 0, y: 0 }, yaw: bot.yaw, sprint: false, jump: false,
+             blocking: false, swinging: true, weaponTip: bot.weaponTip };
+  }
+  const target = t.p, dist = t.dist;
+  const dx = target.pos.x - bot.pos.x;
+  const dz = target.pos.z - bot.pos.z;
+  // Yaw to face target. (-sin, -cos) is the forward of yaw=0; we want -dz forward, -dx right.
+  const tune = bot.botTuning || botDifficultyTuning("medium");
+  const aimSlop = tune.aimSlop;
+  const yaw = Math.atan2(-dx, -dz) + (Math.sin(nowMs / 480 + bot.id * 1.3) * aimSlop);
+
+  const w = weaponOf(bot);
+  // Bot must be close enough that its weapon tip (~bot + L*forward) overlaps the target's
+  // capsule (radius 0.4). Use L + 0.2 as the engagement distance with some margin.
+  const engage = w.length + 0.20;
+  const tooClose = Math.max(0.6, w.length * 0.5);
+
+  // Threat: target's tip approaching us at speed.
+  const tvx = target.weaponTipVel?.x || 0;
+  const tvz = target.weaponTipVel?.z || 0;
+  const tipSpd = Math.hypot(tvx, tvz);
+  const tipToBotX = bot.pos.x - target.weaponTip.x;
+  const tipToBotZ = bot.pos.z - target.weaponTip.z;
+  const tipDist = Math.hypot(tipToBotX, tipToBotZ);
+  // Approach factor: positive when tip moving toward bot.
+  const approach = (tvx * (-tipToBotX) + tvz * (-tipToBotZ)) / Math.max(0.01, tipDist);
+  const threat = (tune.dodgeFactor > 0) && (tipSpd > (5 / Math.max(0.3, tune.dodgeFactor))) && (tipDist < 2.5) && (approach > 2 / Math.max(0.3, tune.dodgeFactor));
+
+  // Movement decision.
+  let mv = { x: 0, y: 0 };
+  if (threat) {
+    // Sidestep perpendicular to attacker's tip-velocity vector.
+    const px = -tvz, pz = tvx;
+    const m = Math.hypot(px, pz) || 1;
+    // Decide left or right based on bot.id parity for variety.
+    const sign = (bot.id % 2) ? 1 : -1;
+    // Map world dodge to player-local mv. yaw = atan2(-dx, -dz). Inverse rotate.
+    const wx = sign * px / m, wz = sign * pz / m;
+    const cy = Math.cos(-yaw), sy = Math.sin(-yaw);
+    mv.x = cy * wx + sy * wz;
+    mv.y = -(-sy * wx + cy * wz);                       // forward axis flipped (server convention)
+  } else if (dist > engage) {
+    mv.y = 1;                                          // close in
+  } else if (dist < tooClose) {
+    mv.y = -0.7;                                        // back off
+    mv.x = ((bot.id % 2) ? 1 : -1) * 0.4;
+  } else {
+    mv.x = Math.sin(nowMs / 700 + bot.id) * 0.6;        // in range — strafe
+  }
+
+  // Unstick: if not progressing for several samples, jitter sideways and try jumping.
+  const stuck = detectStuck(bot, nowMs);
+  if (stuck >= 2) {
+    mv.x = (Math.sin(nowMs / 200 + bot.id * 1.7)) * (0.7 + (stuck * 0.05));
+    mv.y = (stuck > 4 ? 0.5 : 1) * (Math.sign(mv.y || 1));
+  }
+
+  // Block when low HP and target is close.
+  const blocking = bot.hp < 30 && dist < engage * 1.3 && Math.random() < tune.blockChance;
+
+  // Weapon tip — when in range, swing in an arc; otherwise rest forward.
+  const inRange = dist <= engage + 0.5;
+  const swingHz = tune.swingHz + (bot.id % 3);
+  const swingPhase = nowMs / 1000 * swingHz + bot.id * 0.7;
+  const swingAng = Math.sin(swingPhase) * 1.05;       // ±~60°
+  const heightOsc = 1.5 + Math.cos(swingPhase * 0.5) * 0.25;
+  const aimYaw = inRange ? yaw + swingAng : yaw + Math.sin(nowMs / 500 + bot.id) * 0.2;
+
+  const length = w.length;
+  const fx = -Math.sin(aimYaw);
+  const fz = -Math.cos(aimYaw);
+  const tip = {
+    x: bot.pos.x + fx * length,
+    y: bot.pos.y + heightOsc,
+    z: bot.pos.z + fz * length,
+  };
+
+  // Jump rarely to dodge.
+  const jump = bot.onGround && (
+    (Math.random() < 0.005 && dist < engage) ||
+    (stuck > 5 && Math.random() < 0.2)
+  );
+
+  return {
+    seq: (bot.lastInputSeq || 0) + 1,
+    mv,
+    yaw,
+    pitch: 0,
+    sprint: dist > engage * 1.8 && bot.hp > 50,
+    jump,
+    blocking,
+    swinging: true,
+    weaponTip: tip,
+  };
+}

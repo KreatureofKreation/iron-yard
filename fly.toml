@@ -1,0 +1,35 @@
+# Fly.io config. Edit `app = "..."` to your chosen name, then:
+#   fly launch --no-deploy --copy-config   # one-time
+#   fly deploy
+# Free tier handles 1 small instance; WebSocket sticky sessions work out of the box.
+
+app = "iron-yard"
+primary_region = "iad"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  NODE_ENV = "production"
+  PORT     = "8080"
+  BOT_COUNT = "1"
+  BOT_DIFFICULTY = "medium"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = "off"   # keep alive so WS clients aren't dropped
+  auto_start_machines = true
+  min_machines_running = 1
+
+  [[http_service.checks]]
+    grace_period = "10s"
+    interval = "30s"
+    method = "GET"
+    timeout = "5s"
+    path = "/"
+
+[[vm]]
+  cpu_kind = "shared"
+  cpus = 1
+  memory_mb = 256
