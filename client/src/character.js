@@ -191,8 +191,10 @@ export function buildCharacter({ color = 0x9aa0a8, accent = 0xc8a97e, isLocal = 
         torso.rotation.z = idleSway + anim.leanZ;
         torso.rotation.x = anim.leanX;
         torso.position.y = height * 0.55 + Math.sin(phase * 2) * 0.02 * stride;
-        // Hips counter-rotate slightly for follow-through feel.
-        hips.rotation.y = -anim.leanZ * 0.6;
+        // Hips counter-rotate during big swings — exaggerated wind-up feel.
+        hips.rotation.y = -anim.leanZ * 1.2;
+        // Also yaw the hips slightly forward/back from swing direction so the wind-up reads.
+        hips.rotation.x = -anim.leanX * 0.4;
         // Block stance — slight hunch.
         if (blocking) {
           torso.rotation.x += 0.10;
