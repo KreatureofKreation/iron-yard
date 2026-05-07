@@ -72,5 +72,19 @@ export function buildScene() {
     scene.add(m);
   }
 
+  // Weapon racks: a small post + glowing ring marker per rack.
+  const rackPostMat = new THREE.MeshStandardMaterial({ color: 0x6a4a30, roughness: 0.9 });
+  const rackRingMat = new THREE.MeshBasicMaterial({ color: 0x9adfff, transparent: true, opacity: 0.45, side: THREE.DoubleSide });
+  for (const rk of (RUNTIME.arena.racks || [])) {
+    const post = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.10, 1.2, 6), rackPostMat);
+    post.position.set(rk.x, 0.6, rk.z);
+    post.castShadow = true;
+    scene.add(post);
+    const ring = new THREE.Mesh(new THREE.RingGeometry(0.55, 0.7, 32), rackRingMat);
+    ring.rotation.x = -Math.PI / 2;
+    ring.position.set(rk.x, 0.05, rk.z);
+    scene.add(ring);
+  }
+
   return { scene, sun };
 }

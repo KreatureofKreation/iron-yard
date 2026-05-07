@@ -37,6 +37,7 @@ export function makePlayer(name, spawn, weaponKey) {
     score: 0,
     deaths: 0,
     pendingInput: null,
+    killStreak: 0,
     // Anim hint sent to clients.
     animTick: 0,
   };

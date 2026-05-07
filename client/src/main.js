@@ -311,6 +311,17 @@ net.on("hit", (m) => {
   }
 });
 
+net.on("streak", (m) => {
+  const who = m.id === state.myId ? "you" : (state.remotes.get(m.id)?.name ?? `#${m.id}`);
+  const tag =
+    m.count >= 10 ? "RAMPAGE"
+    : m.count >= 7 ? "GODLIKE"
+    : m.count >= 5 ? "BLOODBATH"
+    : "TRIPLE KILL";
+  HUD.killFeed(`★ ${tag} · ${who} (${m.count})`);
+  if (m.id === state.myId) SFX.fanfare();
+});
+
 net.on("clash", (m) => {
   SFX.clash(computePan(m.at));
   spark(scene, m.at, 0.35, 0xfff0a0);
@@ -318,6 +329,31 @@ net.on("clash", (m) => {
     state.shake.mag = Math.max(state.shake.mag, 0.18);
     state.shake.t = 0;
   }
+});
+
+net.on("pickup", (m) => {
+  // Rebuild rig with new weapon for the picker.
+  if (m.id === state.myId) {
+    if (state.rig) scene.remove(state.rig.root);
+    const pal = paletteFor(state.myId);
+    state.weaponKey = m.weapon;
+    // Update RUNTIME.weapon so tip-inertia uses correct mass.
+    if (RUNTIME.weapons[m.weapon]) RUNTIME.weapon = { ...RUNTIME.weapon, ...RUNTIME.weapons[m.weapon] };
+    state.rig = buildCharacter({ ...pal, isLocal: true, weaponKey: m.weapon });
+    scene.add(state.rig.root);
+    HUD.killFeed(`picked up ${m.weapon}`);
+  } else {
+    const r = state.remotes.get(m.id);
+    if (r) {
+      scene.remove(r.rig.root);
+      const pal = paletteFor(m.id);
+      r.rig = buildCharacter({ ...pal, weaponKey: m.weapon });
+      scene.add(r.rig.root);
+      r.weaponKey = m.weapon;
+    }
+  }
+  spark(scene, m.at, 0.3, 0x9adfff);
+  SFX.click();
 });
 
 net.on("matchEnd", (m) => {
@@ -367,27 +403,29 @@ function frame(t) {
   }
   if (state.rig && state.local.alive) {
     // Determine player yaw from aim direction (camera-relative); fallback to movement.
+    // Player yaw: rotate to face aim direction relative to CURRENT camera. Player turns
+    // smoothly. Camera independently auto-trails the player (no feedback loop because
+    // movement basis above is player-yaw, not camera-yaw).
+    // Aim → desired player yaw. aim.y > 0 = mouse at top of screen = player should face
+    // camera-forward direction. cameraForward(world) = (-sin camYaw, _, -cos camYaw).
     let desiredYaw = state.local.yaw;
     const aimMag = Math.hypot(inp.aim.x, inp.aim.y);
     if (aimMag > 0.18) {
-      // Map aim into world dir via camera yaw.
-      const wx = inp.aim.x * Math.cos(state.cameraYaw) + inp.aim.y * Math.sin(state.cameraYaw);
-      const wz = -inp.aim.x * Math.sin(state.cameraYaw) + inp.aim.y * Math.cos(state.cameraYaw);
-      // Note: forward in world is -Z when yaw=0; we want "stick up" to mean forward → so use -wz.
+      const cR_x =  Math.cos(state.cameraYaw), cR_z = -Math.sin(state.cameraYaw);  // camera right (X,Z)
+      const cF_x = -Math.sin(state.cameraYaw), cF_z = -Math.cos(state.cameraYaw);  // camera forward
+      const wx = inp.aim.x * cR_x + inp.aim.y * cF_x;
+      const wz = inp.aim.x * cR_z + inp.aim.y * cF_z;
       desiredYaw = Math.atan2(-wx, -wz);
-    } else {
-      const mvMag = Math.hypot(inp.mv.x, inp.mv.y);
-      if (mvMag > 0.2) {
-        const wx = inp.mv.x * Math.cos(state.cameraYaw) + inp.mv.y * Math.sin(state.cameraYaw);
-        const wz = -inp.mv.x * Math.sin(state.cameraYaw) + inp.mv.y * Math.cos(state.cameraYaw);
-        desiredYaw = Math.atan2(-wx, -wz);
-      }
     }
     state.local.yaw = lerpAngle(state.local.yaw, desiredYaw, Math.min(1, dt * 14));
 
-    // Movement world vector (camera-relative). Stick up (mv.y < 0) → world forward (-Z when cam faces -Z).
-    const mvWX = inp.mv.x * Math.cos(state.cameraYaw) + inp.mv.y * Math.sin(state.cameraYaw);
-    const mvWZ = -inp.mv.x * Math.sin(state.cameraYaw) + inp.mv.y * Math.cos(state.cameraYaw);
+    // Movement world vector — PLAYER-relative (avoids camera-yaw feedback loop).
+    // Stick up / W = inp.mv.y < 0 → walk in player's forward direction.
+    // Player forward (XZ): (-sin(yaw), -cos(yaw)). Right: (cos(yaw), -sin(yaw)).
+    const fwdX = -Math.sin(state.local.yaw), fwdZ = -Math.cos(state.local.yaw);
+    const rgtX =  Math.cos(state.local.yaw), rgtZ = -Math.sin(state.local.yaw);
+    const mvWX = rgtX * inp.mv.x + fwdX * (-inp.mv.y);
+    const mvWZ = rgtZ * inp.mv.x + fwdZ * (-inp.mv.y);
     const mvLen = Math.hypot(mvWX, mvWZ);
     let mvNX = 0, mvNZ = 0;
     if (mvLen > 0.001) { mvNX = mvWX / Math.max(1, mvLen); mvNZ = mvWZ / Math.max(1, mvLen); }
@@ -452,21 +490,9 @@ function frame(t) {
   if (state.serverConfigReceived && performance.now() - state.lastInputSentAt > (1000 / CLIENT.INPUT_HZ)) {
     state.lastInputSentAt = performance.now();
     state.inputSeq++;
-    // Convert mv (camera-local) to world for server.
-    const mvWX = inp.mv.x * Math.cos(state.cameraYaw) + inp.mv.y * Math.sin(state.cameraYaw);
-    const mvWZ = -inp.mv.x * Math.sin(state.cameraYaw) + inp.mv.y * Math.cos(state.cameraYaw);
-    // Server expects mv where forward = -y (in our convention). Our movement basis in player.js uses
-    // forward vec (fx,fz) and right (rx,rz) and combines as fx*mv.y + rx*mv.x. To send correct mv,
-    // we must give it in PLAYER local frame because server applies via player.yaw.
-    // Convert world mv into player-local frame using state.local.yaw.
-    const cy = Math.cos(-state.local.yaw), sy = Math.sin(-state.local.yaw);
-    const localMvX =  cy * mvWX + sy * mvWZ;       // right component
-    const localMvZ = -sy * mvWX + cy * mvWZ;       // forward component (positive forward)
-    // Server's mv.y forward means subtract along forward — server computes fx*mv.y. Forward vec fx is -sin(yaw).
-    // We pass mv.y so that forward motion happens when stick is up. Stick up = inp.mv.y < 0 already.
-    // Map carefully: here localMvZ > 0 means moving in -Z world (forward). Server expects mv.y meaning forward,
-    // so set mv.y = -localMvZ to align.
-    const mvOut = { x: localMvX, y: -localMvZ };
+    // Movement is player-relative. Server expects mv.y > 0 = forward; our input has
+    // stick-up / W as mv.y < 0, so negate.
+    const mvOut = { x: inp.mv.x, y: -inp.mv.y };
 
     net.send({
       t: "input",
@@ -488,13 +514,19 @@ function frame(t) {
     interpolateRemote(r, renderTime);
   }
 
-  // Camera follow — FIXED orientation. User can rotate manually with Q/E (desktop).
-  if (input._keys && input._keys.has("KeyQ")) state.cameraYaw -= dt * 2.0;
-  if (input._keys && input._keys.has("KeyE")) state.cameraYaw += dt * 2.0;
-  if (inp.cameraYawDelta)   state.cameraYaw   += inp.cameraYawDelta;
+  // Camera auto-trails the player. Manual drag (middle/right mouse, mobile ◄►)
+  // adds an OFFSET that decays back to behind-player, so dragging is a temporary peek.
+  state.cameraYawOffset = (state.cameraYawOffset || 0) + (inp.cameraYawDelta || 0);
+  // Decay offset back to 0 over ~1.2s.
+  state.cameraYawOffset *= Math.exp(-dt * 0.8);
   if (inp.cameraPitchDelta) state.cameraPitch += inp.cameraPitchDelta;
   state.cameraPitch = Math.max(0.05, Math.min(1.2, state.cameraPitch));
   state.cameraDist = clamp(state.cameraDist + inp.zoomDelta, 2.5, 9);
+  // Auto-orient camera behind the player. With our convention forward=(-sin,_,-cos),
+  // camera offset (sin*d,_,cos*d) at cameraYaw=playerYaw puts camera on the OPPOSITE
+  // side from forward → behind the player.
+  const camTargetYaw = state.local.yaw + state.cameraYawOffset;
+  state.cameraYaw = lerpAngle(state.cameraYaw, camTargetYaw, Math.min(1, dt * 4.5));
 
   // Spectator: when dead, look at the killer (or nearest alive enemy) and slowly orbit.
   let lookTargetPos = state.local.pos;
@@ -608,8 +640,22 @@ function interpolateRemote(r, renderTime) {
   const tipDz = b.weaponTip.z - a.weaponTip.z;
   const tipSpd = Math.hypot(tipDx, tipDy, tipDz) / Math.max(0.001, snapDtMs / 1000);
   r.rig.pushTrail(tipV, tipSpd);
+
+  // Positional footstep audio.
+  if (r.alive && mvSpeed > 1) {
+    r._stepPhase = (r._stepPhase || 0) + (1 / 60) * (mvSpeed * 0.45 + 1.5);
+    if (r._stepPhase >= Math.PI) {
+      r._stepPhase -= Math.PI;
+      const pan = computePan(r.rig.root.position);
+      const ddx = r.rig.root.position.x - state.local.pos.x;
+      const ddz = r.rig.root.position.z - state.local.pos.z;
+      const dist = Math.hypot(ddx, ddz);
+      const dampen = Math.max(0.05, Math.min(0.7, 6 / Math.max(1, dist)));
+      SFX.footstep(pan, dampen);
+    }
+  }
+
   if (!r.alive) {
-    // Subtle additional slump for fallen body.
     r.rig.root.position.y = 0.0;
   } else {
     r.rig.root.position.y = pos.y;
@@ -808,6 +854,54 @@ for (const b of wpnBtns) {
 // Career stats display.
 const careerEl = document.getElementById("career");
 if (careerEl) careerEl.textContent = "career · " + statsHtml();
+
+// ---- Settings panel ----
+function loadSettings() {
+  try { return JSON.parse(localStorage.getItem("ironyard.settings") || "{}"); }
+  catch { return {}; }
+}
+function saveSettings(s) { try { localStorage.setItem("ironyard.settings", JSON.stringify(s)); } catch {} }
+
+const SETTINGS = Object.assign({
+  volume: 55, fov: 70, sens: 100, camdist: 4.2,
+}, loadSettings());
+
+function applySettingsLive() {
+  SFX.setMasterVolume(SETTINGS.volume / 100);
+  if (camera && camera.fov !== SETTINGS.fov) {
+    camera.fov = SETTINGS.fov;
+    camera.updateProjectionMatrix();
+  }
+  state.cameraDist = SETTINGS.camdist;
+  window.IRONYARD_SETTINGS = SETTINGS;
+}
+applySettingsLive();
+
+const settingsBtn = document.getElementById("settings-btn");
+const settingsPanel = document.getElementById("settings");
+if (settingsBtn && settingsPanel) {
+  settingsBtn.addEventListener("click", () => {
+    settingsPanel.style.display = settingsPanel.style.display === "block" ? "none" : "block";
+  });
+}
+function bindSlider(id, key, format = (v) => v) {
+  const el = document.getElementById(id);
+  const num = document.getElementById(id + "-num");
+  if (!el) return;
+  el.value = SETTINGS[key];
+  if (num) num.textContent = format(SETTINGS[key]);
+  el.addEventListener("input", () => {
+    const v = parseFloat(el.value);
+    SETTINGS[key] = v;
+    if (num) num.textContent = format(v);
+    saveSettings(SETTINGS);
+    applySettingsLive();
+  });
+}
+bindSlider("set-volume", "volume");
+bindSlider("set-fov",    "fov");
+bindSlider("set-sens",   "sens");
+bindSlider("set-camdist","camdist", (v) => v.toFixed(1));
 
 async function play() {
   SFX.unlockAudio();   // first user gesture — required for Web Audio

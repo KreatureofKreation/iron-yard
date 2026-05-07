@@ -13,7 +13,7 @@ export let RUNTIME = {
   player: { radius: 0.4, height: 1.8, eyeY: 1.65, hp: 100, stamina: 100, moveSpeed: 4.5, sprintMult: 1.6 },
   weapon: { length: 1.1, mass: 1.1, name: "arming sword" },
   weapons: {},
-  arena: { size: 30, wallH: 4, obstacles: [] },
+  arena: { size: 30, wallH: 4, obstacles: [], racks: [] },
 };
 export function applyRuntime(welcome) {
   RUNTIME.player = { ...RUNTIME.player, ...welcome.config.player };

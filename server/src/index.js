@@ -140,6 +140,8 @@ setInterval(() => {
     if (e.kind === "clash")           broadcast({ t: "clash",     ...e });
     else if (e.kind === "matchEnd")   broadcast({ t: "matchEnd",  ...e });
     else if (e.kind === "matchStart") broadcast({ t: "matchStart",...e });
+    else if (e.kind === "pickup")     broadcast({ t: "pickup",    ...e });
+    else if (e.kind === "streak")     broadcast({ t: "streak",    ...e });
     else                              broadcast({ t: "hit",       ...e });
   }
 }, 1000 / CONFIG.SNAP_HZ);

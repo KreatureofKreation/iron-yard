@@ -146,6 +146,35 @@
       <div id="stance">— stance —</div>
       <div id="nameplates"></div>
       <div id="dead" class="dead-overlay">SLAIN</div>
+      <button id="settings-btn" style="
+        position:absolute; top:8px; right:8px; padding:.3rem .6rem;
+        background:rgba(0,0,0,0.55); border:1px solid #444; color:#c8a97e;
+        border-radius:3px; font-size:.85rem; pointer-events:auto; cursor:pointer;
+      ">⚙</button>
+      <div id="settings" style="
+        position:absolute; top:42px; right:8px; pointer-events:auto;
+        background:rgba(0,0,0,0.85); border:1px solid #444; border-radius:4px;
+        padding:.6rem .8rem; color:#ddd; font-size:.85rem; display:none; min-width:240px;
+      ">
+        <div style="margin-bottom:.4rem; color:#c8a97e; letter-spacing:.15em;">SETTINGS</div>
+        <label style="display:block; margin-bottom:.4rem;">
+          volume <input id="set-volume" type="range" min="0" max="100" value="55" style="vertical-align:middle; width:120px;" />
+          <span id="set-volume-num">55</span>
+        </label>
+        <label style="display:block; margin-bottom:.4rem;">
+          FOV <input id="set-fov" type="range" min="50" max="100" value="70" style="vertical-align:middle; width:120px;" />
+          <span id="set-fov-num">70</span>
+        </label>
+        <label style="display:block; margin-bottom:.4rem;">
+          mouse sens <input id="set-sens" type="range" min="20" max="200" value="100" style="vertical-align:middle; width:120px;" />
+          <span id="set-sens-num">100</span>%
+        </label>
+        <label style="display:block; margin-bottom:.4rem;">
+          camera distance <input id="set-camdist" type="range" min="2" max="9" step="0.1" value="4.2" style="vertical-align:middle; width:120px;" />
+          <span id="set-camdist-num">4.2</span>m
+        </label>
+        <div style="font-size:.75rem; color:#888; margin-top:.4rem;">stored locally</div>
+      </div>
       <div id="banner" style="
         position:absolute; left:50%; top:30%; transform:translate(-50%,-50%);
         background:rgba(0,0,0,0.78); border:2px solid #c8a97e; padding:1rem 1.6rem;

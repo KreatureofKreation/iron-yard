@@ -11,6 +11,18 @@ export function spawnPoints() {
   ];
 }
 
+// Weapon pickup racks — fixed positions around the arena, one weapon per rack.
+// Walking onto a rack swaps the player's current weapon for the rack's, refreshing only
+// the weapon's stock (the rack always offers the same weapon at that position).
+export function weaponRacks() {
+  return [
+    { x: -10, z:  0, weapon: "longsword" },
+    { x:  10, z:  0, weapon: "mace" },
+    { x:  0,  z: -10, weapon: "spear" },
+    { x:  0,  z:  10, weapon: "arming" },
+  ];
+}
+
 // Static AABB obstacles (pillars) — server clamps players against these.
 export function obstacles() {
   // Four pillars near center for cover.

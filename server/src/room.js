@@ -1,5 +1,5 @@
 import { CONFIG } from "./config.js";
-import { spawnPoints, obstacles } from "./arena.js";
+import { spawnPoints, obstacles, weaponRacks } from "./arena.js";
 import { makePlayer, applyInput, maybeRespawn } from "./player.js";
 import { resolveHits } from "./combat.js";
 import { botInput, pickBotName, pickBotWeapon, botDifficultyTuning } from "./bot.js";
@@ -119,6 +119,25 @@ export class Room {
       if (!p.alive) maybeRespawn(p, this.nextSpawn(), now);
     }
 
+    // Weapon-rack pickups.
+    const racks = weaponRacks();
+    for (const p of this.players.values()) {
+      if (!p.alive || p.bot) {
+        // Bots also pick up — but only on cooldown so they don't dance on a rack.
+        if (!p.alive) continue;
+      }
+      if ((p.lastPickupAtMs || 0) > now - 1000) continue;
+      for (const rk of racks) {
+        const dx = p.pos.x - rk.x, dz = p.pos.z - rk.z;
+        if (dx * dx + dz * dz < 1.0 && p.weaponKey !== rk.weapon) {
+          p.weaponKey = rk.weapon;
+          p.lastPickupAtMs = now;
+          this.pendingHits.push({ kind: "pickup", id: p.id, weapon: rk.weapon, at: { x: rk.x, y: 0, z: rk.z } });
+          break;
+        }
+      }
+    }
+
     // Combat / match phase machine.
     if (this.matchPhase === "countdown") {
       // Input applied but combat skipped + no movement (server clamps below).
@@ -157,6 +176,7 @@ export class Room {
           p.score = 0; p.deaths = 0;
           p.alive = false; p.deadAtMs = 0;
           p.helmIntact = true;
+          p.killStreak = 0;
         }
         this.matchPhase = "countdown";
         this.phaseUntil = now + CONFIG.MATCH.countdownMs;
@@ -227,7 +247,12 @@ export class Room {
   }
 
   arenaInfo() {
-    return { size: CONFIG.ARENA.size, wallH: CONFIG.ARENA.wallH, obstacles: obstacles() };
+    return {
+      size: CONFIG.ARENA.size,
+      wallH: CONFIG.ARENA.wallH,
+      obstacles: obstacles(),
+      racks: weaponRacks(),
+    };
   }
 
   moveSpeedFor(p) {

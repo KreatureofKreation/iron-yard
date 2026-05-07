@@ -213,9 +213,10 @@ export class Input {
       this.aim.x *= 0.85;
       this.aim.y *= 0.85;
     } else {
-      // Desktop: mouse position drives aim. Map screen → -1..1 with center at player.
-      const ax = (this._mousePos.x - 0.5) * 2;
-      const ay = (0.5 - this._mousePos.y) * 2;
+      // Desktop: mouse position drives aim. Map screen → -1..1, scaled by user sensitivity.
+      const sens = ((window.IRONYARD_SETTINGS && window.IRONYARD_SETTINGS.sens) || 100) / 100;
+      const ax = (this._mousePos.x - 0.5) * 2 * sens;
+      const ay = (0.5 - this._mousePos.y) * 2 * sens;
       this.aim.x = Math.max(-1.4, Math.min(1.4, ax));
       this.aim.y = Math.max(-1.4, Math.min(1.4, ay));
     }

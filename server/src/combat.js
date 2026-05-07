@@ -142,7 +142,13 @@ export function resolveHits(players, nowMs) {
       if (t.hp <= 0) {
         killPlayer(t, nowMs);
         a.score++;
+        a.killStreak = (a.killStreak || 0) + 1;
+        t.killStreak = 0;
         event.kill = true;
+        event.attackerStreak = a.killStreak;
+        if (a.killStreak === 3 || a.killStreak === 5 || a.killStreak === 7 || a.killStreak >= 10) {
+          events.push({ kind: "streak", id: a.id, count: a.killStreak });
+        }
       }
       events.push(event);
     }

@@ -158,21 +158,21 @@ export function hurt(pan = 0) {
   n.start(t0); n.stop(t0 + 0.22);
 }
 
-// Footstep — short low thud (no pan needed for own footsteps).
+// Footstep — short low thud. pan defaults to 0 (own footsteps); remotes pass a pan value.
 let lastStepAt = 0;
-export function footstep() {
+export function footstep(pan = 0, dampen = 1) {
   if (!unlocked) return;
   ensureCtx(); if (!ctx) return;
   const now = performance.now();
-  if (now - lastStepAt < 90) return;
+  if (now - lastStepAt < 60) return;
   lastStepAt = now;
-  const out = master;
+  const out = pan ? panned(pan) : master;
   const t0 = ctx.currentTime;
   const o = ctx.createOscillator();
   o.type = "sine";
   o.frequency.setValueAtTime(140, t0);
   o.frequency.exponentialRampToValueAtTime(60, t0 + 0.10);
-  const e = envGain(t0, 0.005, 0.10, 0.18 + Math.random() * 0.06);
+  const e = envGain(t0, 0.005, 0.10, (0.18 + Math.random() * 0.06) * dampen);
   o.connect(e).connect(out);
   o.start(t0); o.stop(t0 + 0.13);
 }
