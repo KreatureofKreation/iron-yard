@@ -9,6 +9,7 @@
     "start": "node src/index.js"
   },
   "dependencies": {
+    "@dimforge/rapier3d-compat": "^0.19.3",
     "ws": "^8.18.0"
   }
 }

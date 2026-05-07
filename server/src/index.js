@@ -5,6 +5,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { CONFIG } from "./config.js";
 import { Room } from "./room.js";
+import { initRapier } from "./physics.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname  = path.dirname(__filename);
@@ -46,6 +47,8 @@ const server = http.createServer((req, res) => {
   });
 });
 
+// Boot order: Rapier WASM init → Room (which builds a PhysicsWorld) → start tick.
+await initRapier();
 const room = new Room();
 
 function handleSlashCommand(text, player) {

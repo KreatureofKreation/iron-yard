@@ -1,8 +1,9 @@
 import { CONFIG } from "./config.js";
 import { spawnPoints, obstacles, weaponRacks } from "./arena.js";
-import { makePlayer, applyInput, maybeRespawn } from "./player.js";
+import { makePlayer, applyInput, maybeRespawn, weaponOf } from "./player.js";
 import { resolveHits } from "./combat.js";
 import { botInput, pickBotName, pickBotWeapon, botDifficultyTuning } from "./bot.js";
+import { PhysicsWorld } from "./physics.js";
 
 let BOT_TARGET = Number(process.env.BOT_COUNT ?? 1);
 let BOT_DIFFICULTY = (process.env.BOT_DIFFICULTY || "medium").toLowerCase();
@@ -10,7 +11,8 @@ let BOT_DIFFICULTY = (process.env.BOT_DIFFICULTY || "medium").toLowerCase();
 export class Room {
   constructor() {
     this.players = new Map();
-    this.spectators = new Set();    // sockets that joined when room was full
+    this.spectators = new Set();
+    this.physics = new PhysicsWorld();
     this.tick = 0;
     this.lastTickMs = Date.now();
     this.spawns = spawnPoints();
@@ -51,12 +53,22 @@ export class Room {
     const p = makePlayer(name, this.nextSpawn(), weaponKey);
     p.socket = socket;
     this.players.set(p.id, p);
+    this._attachPlayerSword(p);
     this.ensureBots();
     return p;
   }
 
+  _attachPlayerSword(p) {
+    const w = weaponOf(p);
+    const startTip = { x: p.pos.x, y: p.pos.y + 1.4, z: p.pos.z - 0.3 };
+    p.weaponTip = { ...startTip };
+    p.weaponTipPrev = { ...startTip };
+    this.physics.attachSword(p.id, w.mass, w.length, startTip);
+  }
+
   removePlayer(id) {
     this.players.delete(id);
+    this.physics.detachSword(id);
     for (const p of this.players.values()) {
       p.lastHitAtMs.delete(id);
       p.parryUntilMs.delete(id);
@@ -91,6 +103,7 @@ export class Room {
     p.botTuning = botDifficultyTuning(difficulty);
     p.difficulty = difficulty;
     this.players.set(p.id, p);
+    this._attachPlayerSword(p);
     return p;
   }
 
@@ -147,8 +160,11 @@ export class Room {
     this.reapZombies();
 
     const dtMs = 1000 / CONFIG.TICK_HZ;
-    // One sim step per player per tick, regardless of input rate.
+    const dt = dtMs / 1000;
     const frozen = this.matchPhase === "countdown";
+
+    // 1) Resolve each player's input → updates p.pos and stamps the AIM TARGET into
+    //    p.weaponTipTarget (we re-route the existing weaponTip field to mean "target").
     for (const p of this.players.values()) {
       let input;
       if (p.bot && p.alive && !frozen) {
@@ -157,12 +173,32 @@ export class Room {
         input = p.pendingInput;
         p.pendingInput = null;
       } else {
-        // Idle / countdown — no movement. Player still gets gravity + tip-vel decay.
         if (p.pendingInput) p.pendingInput = null;
         input = { mv: { x: 0, y: 0 }, yaw: p.yaw, sprint: false, jump: false,
                   blocking: false, swinging: false, weaponTip: p.weaponTip };
       }
       applyInput(p, input, dtMs);
+      // After applyInput, p.weaponTip is the (clamped) target from the client/bot.
+      p.weaponTipTarget = { x: p.weaponTip.x, y: p.weaponTip.y, z: p.weaponTip.z };
+    }
+
+    // 2) Drive each sword body toward its target, step the world.
+    for (const p of this.players.values()) {
+      if (p.zombieUntilMs > now) continue;
+      this.physics.driveSword(p.id, p.weaponTipTarget, dt);
+    }
+    this.physics.step();
+
+    // 3) Read back actual sword pos+velocity. Subtract player vel to isolate swing motion.
+    for (const p of this.players.values()) {
+      const s = this.physics.swordState(p.id);
+      if (!s) continue;
+      p.weaponTip = s.pos;
+      p.weaponTipVel = {
+        x: s.vel.x - (p.vel.x || 0),
+        y: s.vel.y - (p.vel.y || 0),
+        z: s.vel.z - (p.vel.z || 0),
+      };
     }
 
     // Bleed ticks (DOT). Accumulator handles fractional dmg.
@@ -208,6 +244,8 @@ export class Room {
         if (dx * dx + dz * dz < 1.0 && p.weaponKey !== rk.weapon) {
           p.weaponKey = rk.weapon;
           p.lastPickupAtMs = now;
+          const w = weaponOf(p);
+          this.physics.swapWeapon(p.id, w.mass, w.length);
           this.pendingHits.push({ kind: "pickup", id: p.id, weapon: rk.weapon, at: { x: rk.x, y: 0, z: rk.z } });
           break;
         }
