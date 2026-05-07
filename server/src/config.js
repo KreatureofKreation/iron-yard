@@ -37,27 +37,31 @@ export const CONFIG = {
       key: "arming", name: "arming sword", grip: "one-hand",
       length: 1.10, mass: 1.10, edgeHalfWidth: 0.04,
       minSpeed: 4.0, speedScale: 4.0, maxDmg: 45, minDmg: 6,
-      hitCooldownMs: 350, swingMass: 1.0, // 1.0 = neutral feel
+      hitCooldownMs: 350, swingMass: 1.0,
+      damageType: "slash",     // applies bleed
     },
     longsword: {
       key: "longsword", name: "longsword", grip: "two-hand",
       length: 1.30, mass: 1.50, edgeHalfWidth: 0.045,
       minSpeed: 3.5, speedScale: 4.5, maxDmg: 60, minDmg: 9,
       hitCooldownMs: 450, swingMass: 1.4,
+      damageType: "slash",
     },
     mace: {
       key: "mace", name: "mace", grip: "one-hand",
       length: 0.80, mass: 1.40, edgeHalfWidth: 0.07,
       minSpeed: 3.0, speedScale: 5.5, maxDmg: 70, minDmg: 12,
       hitCooldownMs: 500, swingMass: 1.5,
-      blunt: true,             // bypasses some block reduction
+      blunt: true,
+      damageType: "blunt",     // applies stun
     },
     spear: {
       key: "spear", name: "spear", grip: "two-hand",
       length: 2.10, mass: 1.20, edgeHalfWidth: 0.035,
       minSpeed: 5.0, speedScale: 5.5, maxDmg: 55, minDmg: 8,
       hitCooldownMs: 400, swingMass: 1.2,
-      thrustBonus: true,       // bonus damage on tip motion that's mostly forward
+      thrustBonus: true,
+      damageType: "pierce",    // applies bleed
     },
   },
   // Match/round.

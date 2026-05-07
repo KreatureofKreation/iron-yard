@@ -19,6 +19,42 @@ export const HUD = {
     const el = document.getElementById("stance");
     if (el) el.textContent = label;
   },
+  // Show active status badges (stun/bleed/cripple) and an overlay tint when stunned.
+  setStatus({ stun = 0, bleed = 0, cripple = 0 }) {
+    let bar = document.getElementById("status-bar");
+    if (!bar) {
+      bar = document.createElement("div");
+      bar.id = "status-bar";
+      Object.assign(bar.style, {
+        position: "absolute", left: "1rem", bottom: "70px",
+        display: "flex", gap: "8px", pointerEvents: "none",
+      });
+      document.getElementById("hud")?.append(bar);
+    }
+    const badges = [];
+    if (stun > 0)    badges.push({ k:"stun",    label:"STUNNED",  ms:stun,    color:"#ffea7a" });
+    if (bleed > 0)   badges.push({ k:"bleed",   label:"BLEEDING", ms:bleed,   color:"#d04040" });
+    if (cripple > 0) badges.push({ k:"cripple", label:"CRIPPLED", ms:cripple, color:"#c8a97e" });
+    bar.innerHTML = badges.map(b => `<div style="
+      background:rgba(0,0,0,0.6); border:1px solid ${b.color}; color:${b.color};
+      padding:3px 7px; border-radius:3px; font-size:.75rem;
+      letter-spacing:.1em; font-family:ui-monospace,monospace;
+    ">${b.label} ${(b.ms/1000).toFixed(1)}s</div>`).join("");
+
+    // Stun screen tint.
+    let tint = document.getElementById("stun-tint");
+    if (!tint) {
+      tint = document.createElement("div");
+      tint.id = "stun-tint";
+      Object.assign(tint.style, {
+        position: "absolute", inset: "0", pointerEvents: "none",
+        background: "radial-gradient(ellipse at center, rgba(255,234,122,0) 40%, rgba(0,0,0,0.55) 100%)",
+        opacity: "0", transition: "opacity .25s",
+      });
+      document.getElementById("hud")?.append(tint);
+    }
+    tint.style.opacity = stun > 0 ? "1" : "0";
+  },
   setScores(rows, myId) {
     const el = document.getElementById("scoreboard");
     if (!el) return;

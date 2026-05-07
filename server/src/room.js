@@ -114,6 +114,31 @@ export class Room {
       applyInput(p, input, dtMs);
     }
 
+    // Bleed ticks (DOT). Accumulator handles fractional dmg.
+    const tickSec = dtMs / 1000;
+    for (const p of this.players.values()) {
+      if (!p.alive) continue;
+      if (now < p.bleedUntilMs && p.bleedDmgPerSec > 0) {
+        p.bleedAccum += p.bleedDmgPerSec * tickSec;
+        const whole = Math.floor(p.bleedAccum);
+        if (whole > 0) {
+          p.bleedAccum -= whole;
+          p.hp = Math.max(0, p.hp - whole);
+          this.pendingHits.push({ kind: "bleed", to: p.id, dmg: whole, at: { x: p.pos.x, y: p.pos.y + 1.2, z: p.pos.z } });
+          if (p.hp <= 0) {
+            // Bleed-out death — no attribution.
+            p.alive = false; p.hp = 0; p.deadAtMs = now; p.deaths++;
+            p.killStreak = 0;
+            this.pendingHits.push({ kind: "hit", from: 0, to: p.id, dmg: whole, kill: true, zone: "torso", weapon: "bleed",
+              at: { x: p.pos.x, y: p.pos.y + 1.0, z: p.pos.z } });
+          }
+        }
+      } else {
+        p.bleedDmgPerSec = 0;
+        p.bleedAccum = 0;
+      }
+    }
+
     // Respawn dead.
     for (const p of this.players.values()) {
       if (!p.alive) maybeRespawn(p, this.nextSpawn(), now);
@@ -216,6 +241,8 @@ export class Room {
         stamina: p.stamina,
         helmIntact: p.helmIntact,
         crippleMsLeft: Math.max(0, p.crippledUntilMs - Date.now()),
+        stunMsLeft:    Math.max(0, p.stunUntilMs    - Date.now()),
+        bleedMsLeft:   Math.max(0, p.bleedUntilMs   - Date.now()),
         alive: p.alive,
         weaponTip: p.weaponTip,
         swinging: p.swinging,

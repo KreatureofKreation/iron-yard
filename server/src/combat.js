@@ -137,12 +137,31 @@ export function resolveHits(players, nowMs) {
         t.crippledUntilMs = nowMs + 3000;
       }
 
+      // Damage-type effects (computed; written into event below after it's built).
+      const dmgType = w.damageType || "slash";
+      let stunMsApplied = 0, bleedTotalApplied = 0;
+      if (dmgType === "blunt") {
+        const stunChance = Math.min(0.85, 0.20 + dmg * 0.012);
+        if (Math.random() < stunChance) {
+          stunMsApplied = (zone === "head" ? 2200 : 1400) + Math.min(600, dmg * 8);
+          t.stunUntilMs = Math.max(t.stunUntilMs, nowMs + stunMsApplied);
+        }
+      } else if (dmgType === "slash" || dmgType === "pierce") {
+        bleedTotalApplied = Math.max(3, Math.round(dmg * (dmgType === "pierce" ? 0.55 : 0.35)));
+        const durMs = dmgType === "pierce" ? 4500 : 4000;
+        t.bleedDmgPerSec = Math.max(t.bleedDmgPerSec, bleedTotalApplied / (durMs / 1000));
+        t.bleedUntilMs = Math.max(t.bleedUntilMs, nowMs + durMs);
+      }
+
       const event = {
         kind: "hit",
         from: a.id, to: t.id, dmg, speed: tipSpeed, zone, weapon: w.key,
+        damageType: dmgType,
         at: { x: (seg.tip.x + cap.a.x) / 2, y: hitY, z: (seg.tip.z + cap.a.z) / 2 },
       };
       if (helmBroken) event.helmBreak = true;
+      if (stunMsApplied)     event.stun  = stunMsApplied;
+      if (bleedTotalApplied) event.bleed = bleedTotalApplied;
       if (t.hp <= 0) {
         killPlayer(t, nowMs);
         a.score++;

@@ -39,6 +39,10 @@ export function makePlayer(name, spawn, weaponKey) {
     pendingInput: null,
     killStreak: 0,
     crippledUntilMs: 0,
+    stunUntilMs: 0,
+    bleedUntilMs: 0,
+    bleedDmgPerSec: 0,
+    bleedAccum: 0,
     // Anim hint sent to clients.
     animTick: 0,
   };
@@ -52,6 +56,13 @@ export function weaponOf(p) {
 export function applyInput(p, input, dtMs) {
   const dt = dtMs / 1000;
   if (!p.alive) return;
+
+  // Stunned: drop movement + swing inputs but still tick gravity / weapon-tip stays put.
+  const nowMs = Date.now();
+  if (nowMs < p.stunUntilMs) {
+    input = { mv: { x: 0, y: 0 }, yaw: p.yaw, sprint: false, jump: false,
+              blocking: false, swinging: false, weaponTip: p.weaponTip };
+  }
 
   // Look — we trust client orientation for view but clamp pitch.
   if (typeof input.yaw === "number")   p.yaw   = input.yaw;
@@ -198,6 +209,10 @@ export function maybeRespawn(p, spawn, nowMs) {
   p.stamina = CONFIG.PLAYER.stamina;
   p.helmIntact = true;
   p.crippledUntilMs = 0;
+  p.stunUntilMs = 0;
+  p.bleedUntilMs = 0;
+  p.bleedDmgPerSec = 0;
+  p.bleedAccum = 0;
   p.alive = true;
   p.spawnedAtMs = nowMs;
   p.lastHitAtMs.clear();

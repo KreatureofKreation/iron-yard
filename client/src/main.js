@@ -205,7 +205,10 @@ net.on("snap", (m) => {
       state.local.alive = p.alive;
       state.local.invulnMs = p.invulnMs || 0;
       state.local.crippleMsLeft = p.crippleMsLeft || 0;
+      state.local.stunMsLeft = p.stunMsLeft || 0;
+      state.local.bleedMsLeft = p.bleedMsLeft || 0;
       HUD.setHp(p.hp, RUNTIME.player.hp);
+      HUD.setStatus({ stun: p.stunMsLeft || 0, bleed: p.bleedMsLeft || 0, cripple: p.crippleMsLeft || 0 });
       HUD.setStamina(p.stamina ?? 100, RUNTIME.player.stamina ?? 100);
       HUD.setDead(!p.alive);
       // Hard-snap on respawn so we don't lerp through walls back into the world.
@@ -238,6 +241,8 @@ net.on("snap", (m) => {
     const wasAliveR = r.alive;
     r.invulnMs = p.invulnMs || 0;
     r.crippleMsLeft = p.crippleMsLeft || 0;
+    r.stunMsLeft = p.stunMsLeft || 0;
+    r.bleedMsLeft = p.bleedMsLeft || 0;
     r.stamina = p.stamina ?? 100;
     // Restore detached helm + rig visibility on remote respawn.
     if (!wasAliveR && p.alive) {
@@ -354,6 +359,19 @@ net.on("streak", (m) => {
     : "TRIPLE KILL";
   HUD.killFeed(`★ ${tag} · ${who} (${m.count})`);
   if (m.id === state.myId) SFX.fanfare();
+});
+
+net.on("bleed", (m) => {
+  if (m.at) {
+    spark(scene, m.at, 0.18, 0xa01515);
+    tmpProj.set(m.at.x, m.at.y, m.at.z);
+    tmpProj.project(camera);
+    if (tmpProj.z >= -1 && tmpProj.z <= 1) {
+      const sx = (tmpProj.x * 0.5 + 0.5) * window.innerWidth;
+      const sy = (-tmpProj.y * 0.5 + 0.5) * window.innerHeight;
+      HUD.damageNumber("-" + m.dmg, sx, sy, m.to === state.myId ? "self" : "out");
+    }
+  }
 });
 
 net.on("clash", (m) => {
