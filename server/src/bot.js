@@ -21,6 +21,13 @@ export function botDifficultyTuning(level = "medium") {
   return BOT_DIFFICULTY[level] || BOT_DIFFICULTY.medium;
 }
 
+const BOT_TAUNTS = [
+  "yield, dog!", "another for the heap", "again? bring it.",
+  "easy meat", "haha — coward!", "to the gibbet with you",
+  "for the iron yard!", "stay down", "your bones, my keep",
+];
+export function pickBotTaunt() { return BOT_TAUNTS[(Math.random() * BOT_TAUNTS.length) | 0]; }
+
 export function pickBotName(existing) {
   const used = new Set([...existing.values()].map(p => p.name));
   for (const n of BOT_NAMES) if (!used.has(`[bot] ${n}`)) return n;

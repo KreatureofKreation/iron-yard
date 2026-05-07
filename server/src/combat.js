@@ -2,6 +2,7 @@ import { CONFIG } from "./config.js";
 import { segCapsuleHit, segSegDistSq, sub, len, norm, dot } from "./math.js";
 import { playerCapsule, weaponSegment, killPlayer } from "./player.js";
 import { weaponOf } from "./player.js";
+import { pickBotTaunt } from "./bot.js";
 
 // Resolve combat for the tick: parry/clashes first, then hits. Returns events.
 export function resolveHits(players, nowMs) {
@@ -130,8 +131,11 @@ export function resolveHits(players, nowMs) {
       const kbMag = 2.5 + (zone === "head" ? 1.5 : 0.5) + tipSpeed * 0.10;
       t.impulse.x += kb.x * kbMag;
       t.impulse.z += kb.z * kbMag;
-      // Leg hit slows movement briefly via existing vel scale.
-      if (zone === "legs") { t.vel.x *= 0.4; t.vel.z *= 0.4; }
+      // Leg hit cripples for 3s — slows movement and shows limp.
+      if (zone === "legs") {
+        t.vel.x *= 0.4; t.vel.z *= 0.4;
+        t.crippledUntilMs = nowMs + 3000;
+      }
 
       const event = {
         kind: "hit",
@@ -148,6 +152,10 @@ export function resolveHits(players, nowMs) {
         event.attackerStreak = a.killStreak;
         if (a.killStreak === 3 || a.killStreak === 5 || a.killStreak === 7 || a.killStreak >= 10) {
           events.push({ kind: "streak", id: a.id, count: a.killStreak });
+        }
+        // Bot taunt on kill (low chance to avoid spam).
+        if (a.bot && Math.random() < 0.5) {
+          events.push({ kind: "chat", from: a.id, name: a.name, text: pickBotTaunt() });
         }
       }
       events.push(event);

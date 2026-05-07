@@ -56,6 +56,34 @@ export const HUD = {
   },
   // Show a directional indicator pointing toward the source of incoming damage.
   // angleRad is screen-space angle (0 = up, π/2 = right, etc).
+  // Floating damage number at a screen-space coord. Kind:
+  //  "self" red, "out" yellow, "head" white-bold, "block" dim.
+  damageNumber(text, sx, sy, kind = "out") {
+    const hud = document.getElementById("hud");
+    if (!hud) return;
+    const el = document.createElement("div");
+    el.textContent = text;
+    const palette = {
+      self:  { color: "#ff7070", size: "1.4rem" },
+      out:   { color: "#ffd060", size: "1.1rem" },
+      head:  { color: "#fff",    size: "1.6rem" },
+      block: { color: "#9ad8ff", size: "0.95rem" },
+    }[kind] || {};
+    Object.assign(el.style, {
+      position: "absolute", left: sx + "px", top: sy + "px",
+      transform: "translate(-50%, -50%)", pointerEvents: "none",
+      color: palette.color, fontWeight: "700", fontSize: palette.size,
+      textShadow: "0 0 4px rgba(0,0,0,0.85)", zIndex: 7,
+      opacity: "1", transition: "transform 1.0s ease-out, opacity 1.0s ease-out",
+      fontFamily: "ui-monospace, SFMono-Regular, monospace",
+    });
+    hud.append(el);
+    requestAnimationFrame(() => {
+      el.style.transform = `translate(-50%, calc(-50% - 60px))`;
+      el.style.opacity = "0";
+    });
+    setTimeout(() => el.remove(), 1100);
+  },
   hitFrom(angleRad) {
     const hud = document.getElementById("hud");
     if (!hud) return;

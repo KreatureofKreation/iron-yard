@@ -128,6 +128,29 @@ export function clash(pan = 0) {
   o2.start(t0); o2.stop(t0 + 0.22);
 }
 
+// Helm ricochet — bright metallic ping sweep, distinct from clash.
+export function ricochet(pan = 0) {
+  if (!unlocked) return;
+  ensureCtx(); if (!ctx) return;
+  const out = panned(pan);
+  const t0 = ctx.currentTime;
+  const o = ctx.createOscillator();
+  o.type = "triangle";
+  o.frequency.setValueAtTime(2400, t0);
+  o.frequency.exponentialRampToValueAtTime(900, t0 + 0.40);
+  const e = envGain(t0, 0.001, 0.42, 0.30);
+  o.connect(e).connect(out);
+  o.start(t0); o.stop(t0 + 0.45);
+
+  const o2 = ctx.createOscillator();
+  o2.type = "sine";
+  o2.frequency.setValueAtTime(3200, t0);
+  o2.frequency.exponentialRampToValueAtTime(1200, t0 + 0.30);
+  const e2 = envGain(t0, 0.001, 0.30, 0.18);
+  o2.connect(e2).connect(out);
+  o2.start(t0); o2.stop(t0 + 0.32);
+}
+
 // Death — low rumble + falling tone.
 export function death(pan = 0) {
   if (!unlocked) return;

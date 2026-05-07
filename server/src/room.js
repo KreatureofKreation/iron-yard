@@ -215,6 +215,7 @@ export class Room {
         hp: p.hp,
         stamina: p.stamina,
         helmIntact: p.helmIntact,
+        crippleMsLeft: Math.max(0, p.crippledUntilMs - Date.now()),
         alive: p.alive,
         weaponTip: p.weaponTip,
         swinging: p.swinging,

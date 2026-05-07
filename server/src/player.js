@@ -38,6 +38,7 @@ export function makePlayer(name, spawn, weaponKey) {
     deaths: 0,
     pendingInput: null,
     killStreak: 0,
+    crippledUntilMs: 0,
     // Anim hint sent to clients.
     animTick: 0,
   };
@@ -85,6 +86,7 @@ export function applyInput(p, input, dtMs) {
   let speed = CONFIG.PLAYER.moveSpeed * (canSprint ? CONFIG.PLAYER.sprintMult : 1);
   if (canBlock) speed *= 0.55;
   if (p.swinging) speed *= 0.75;
+  if (Date.now() < p.crippledUntilMs) speed *= 0.45;   // leg cripple debuff
 
   // Smooth acceleration toward target velocity.
   const targetVx = mx * speed;
@@ -195,6 +197,7 @@ export function maybeRespawn(p, spawn, nowMs) {
   p.hp = CONFIG.PLAYER.hp;
   p.stamina = CONFIG.PLAYER.stamina;
   p.helmIntact = true;
+  p.crippledUntilMs = 0;
   p.alive = true;
   p.spawnedAtMs = nowMs;
   p.lastHitAtMs.clear();

@@ -203,6 +203,7 @@ net.on("snap", (m) => {
       state.local.stamina = p.stamina;
       state.local.alive = p.alive;
       state.local.invulnMs = p.invulnMs || 0;
+      state.local.crippleMsLeft = p.crippleMsLeft || 0;
       HUD.setHp(p.hp, RUNTIME.player.hp);
       HUD.setStamina(p.stamina ?? 100, RUNTIME.player.stamina ?? 100);
       HUD.setDead(!p.alive);
@@ -235,6 +236,7 @@ net.on("snap", (m) => {
     });
     const wasAliveR = r.alive;
     r.invulnMs = p.invulnMs || 0;
+    r.crippleMsLeft = p.crippleMsLeft || 0;
     r.stamina = p.stamina ?? 100;
     // Restore detached helm on remote respawn.
     if (!wasAliveR && p.alive && r.rig?.parts?.helm) r.rig.parts.helm.visible = true;
@@ -293,9 +295,21 @@ net.on("hit", (m) => {
     HUD.killFeed(`⊕ headshot ${nameFor(m.from)} → ${nameFor(m.to)} (${m.dmg})`);
   }
   spark(scene, m.at, m.kill ? 0.6 : 0.3, m.zone === "head" ? 0xff5050 : 0xff8050);
+  // Floating damage number at world hit point.
+  if (m.dmg > 0 && m.at) {
+    tmpProj.set(m.at.x, m.at.y + 0.4, m.at.z);
+    tmpProj.project(camera);
+    if (tmpProj.z >= -1 && tmpProj.z <= 1) {
+      const sx = (tmpProj.x * 0.5 + 0.5) * window.innerWidth;
+      const sy = (-tmpProj.y * 0.5 + 0.5) * window.innerHeight;
+      const kind = m.to === state.myId ? "self" : (m.zone === "head" ? "head" : "out");
+      HUD.damageNumber(String(m.dmg), sx, sy, kind);
+    }
+  }
   // Helm break (saved by helm OR lethal head): detach helmet visual.
   if (m.helmBreak || (m.kill && m.zone === "head")) {
     detachHelmet(m.to, m.at);
+    if (m.helmBreak) SFX.ricochet(pan);
   }
   // Lethal head kill: extra sound.
   if (m.kill && m.zone === "head") SFX.death(pan);
@@ -463,7 +477,7 @@ function frame(t) {
     const cy = Math.cos(-state.local.yaw), sy = Math.sin(-state.local.yaw);
     const swingLat =  cy * state.weaponTipVel.x + sy * state.weaponTipVel.z;
     const swingFwd = -sy * state.weaponTipVel.x + cy * state.weaponTipVel.z;
-    state.rig.animate(dt, { mvSpeed, swinging: state.weaponTipVel.length() > 4, blocking: !!inp.block, alive: state.local.alive, swingLat, swingFwd });
+    state.rig.animate(dt, { mvSpeed, swinging: state.weaponTipVel.length() > 4, blocking: !!inp.block, alive: state.local.alive, swingLat, swingFwd, crippled: (state.local.crippleMsLeft || 0) > 0 });
     state.rig.setInvuln((state.local.invulnMs || 0) > 0, performance.now() / 1000);
     state.rig.pushTrail(state.weaponTipWorld, state.weaponTipVel.length());
 
@@ -632,7 +646,7 @@ function interpolateRemote(r, renderTime) {
   const snapDtMs = Math.max(1, b.ts - a.ts);
   const dx = b.pos.x - a.pos.x, dz = b.pos.z - a.pos.z;
   const mvSpeed = Math.hypot(dx, dz) / (snapDtMs / 1000);
-  r.rig.animate(1 / 60, { mvSpeed, swinging: false, blocking: false, alive: !!r.alive });
+  r.rig.animate(1 / 60, { mvSpeed, swinging: false, blocking: false, alive: !!r.alive, crippled: (r.crippleMsLeft || 0) > 0 });
   r.rig.setInvuln((r.invulnMs || 0) > 0, performance.now() / 1000);
   // Estimate tip speed from snap delta to drive trail.
   const tipDx = b.weaponTip.x - a.weaponTip.x;

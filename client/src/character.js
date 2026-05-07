@@ -113,7 +113,7 @@ export function buildCharacter({ color = 0x9aa0a8, accent = 0xc8a97e, isLocal = 
      * Per-frame animation update.
      * mvSpeed: 0..~7 (m/s). swinging boolean. dt seconds. blocking boolean.
      */
-    animate(dt, { mvSpeed = 0, swinging = false, blocking = false, alive = true, swingLat = 0, swingFwd = 0 } = {}) {
+    animate(dt, { mvSpeed = 0, swinging = false, blocking = false, alive = true, swingLat = 0, swingFwd = 0, crippled = false } = {}) {
       anim.swayPhase += dt;
       if (alive) {
         const stride = THREE.MathUtils.clamp(mvSpeed / 5, 0, 1);
@@ -122,6 +122,14 @@ export function buildCharacter({ color = 0x9aa0a8, accent = 0xc8a97e, isLocal = 
         legL.rotation.x =  Math.sin(phase) * 0.7 * stride;
         legR.rotation.x = -Math.sin(phase) * 0.7 * stride;
         armL.rotation.x = -Math.sin(phase) * 0.5 * stride;
+        if (crippled) {
+          // Drag the right leg, lean left.
+          legR.rotation.x = Math.max(-0.2, legR.rotation.x);
+          legR.rotation.z = 0.25;
+          torso.rotation.z += 0.10;
+        } else {
+          legR.rotation.z = 0;
+        }
         // Idle torso sway + body lean from swing motion (limb weight).
         const idleSway = Math.sin(anim.swayPhase * 1.2) * 0.02;
         // Smooth lean values (state stored in anim).
