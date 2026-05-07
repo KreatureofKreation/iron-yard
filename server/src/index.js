@@ -47,6 +47,35 @@ const server = http.createServer((req, res) => {
 });
 
 const room = new Room();
+
+function handleSlashCommand(text, player) {
+  const [cmd, ...args] = text.trim().split(/\s+/);
+  switch (cmd) {
+    case "/bots": {
+      const n = Math.max(0, Math.min(CONFIG.MAX_PLAYERS - 1, parseInt(args[0] ?? "1", 10)));
+      if (Number.isNaN(n)) return "usage: /bots N";
+      room.setBotTarget(n);
+      return `bot target set to ${n}`;
+    }
+    case "/diff": {
+      const lvl = (args[0] || "").toLowerCase();
+      if (!["easy", "medium", "hard"].includes(lvl)) return "usage: /diff easy|medium|hard";
+      room.setBotDifficulty(lvl);
+      return `bot difficulty set to ${lvl}`;
+    }
+    case "/score": {
+      const n = parseInt(args[0] ?? "5", 10);
+      if (!Number.isFinite(n) || n < 1 || n > 99) return "usage: /score N (1-99)";
+      CONFIG.MATCH.scoreToWin = n;
+      return `score-to-win set to ${n} (next round)`;
+    }
+    case "/help":
+      return "/bots N · /diff easy|medium|hard · /score N · /help";
+    default:
+      return `unknown command: ${cmd}. try /help`;
+  }
+}
+
 const wss = new WebSocketServer({ server });
 server.listen(CONFIG.PORT, () => {
   console.log(`[ironyard] http+ws server on :${CONFIG.PORT}`);
@@ -147,6 +176,15 @@ wss.on("connection", (sock) => {
 
     if (msg.t === "chat" && typeof msg.text === "string") {
       const text = msg.text.slice(0, 200);
+      // Slash-commands. Local to this server; anyone can run them.
+      if (text.startsWith("/")) {
+        const reply = handleSlashCommand(text, player);
+        if (reply) {
+          broadcast({ t: "chat", from: 0, name: "[server]", text: `${player.name}: ${text}` });
+          broadcast({ t: "chat", from: 0, name: "[server]", text: reply });
+        }
+        return;
+      }
       broadcast({ t: "chat", from: player.id, name: player.name, text });
       return;
     }

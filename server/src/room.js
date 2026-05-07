@@ -4,8 +4,8 @@ import { makePlayer, applyInput, maybeRespawn } from "./player.js";
 import { resolveHits } from "./combat.js";
 import { botInput, pickBotName, pickBotWeapon, botDifficultyTuning } from "./bot.js";
 
-const BOT_TARGET = Number(process.env.BOT_COUNT ?? 1);
-const BOT_DIFFICULTY = (process.env.BOT_DIFFICULTY || "medium").toLowerCase();
+let BOT_TARGET = Number(process.env.BOT_COUNT ?? 1);
+let BOT_DIFFICULTY = (process.env.BOT_DIFFICULTY || "medium").toLowerCase();
 
 export class Room {
   constructor() {
@@ -107,6 +107,18 @@ export class Room {
   removeOneBot() {
     for (const p of this.players.values()) if (p.bot) { this.players.delete(p.id); return p.id; }
     return null;
+  }
+
+  setBotTarget(n) {
+    BOT_TARGET = Math.max(0, Math.min(CONFIG.MAX_PLAYERS - 1, n | 0));
+    this.ensureBots();
+  }
+  setBotDifficulty(level) {
+    BOT_DIFFICULTY = level;
+    // Re-tune existing bots.
+    for (const p of this.players.values()) {
+      if (p.bot) { p.botTuning = botDifficultyTuning(level); p.difficulty = level; }
+    }
   }
 
   ensureBots() {
