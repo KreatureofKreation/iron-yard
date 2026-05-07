@@ -64,6 +64,8 @@ export const CONFIG = {
   MATCH: {
     scoreToWin: Number(process.env.SCORE_TO_WIN) || 5,
     intermissionMs: Number(process.env.INTERMISSION_MS) || 6000,
+    countdownMs: Number(process.env.COUNTDOWN_MS) || 3000,   // input frozen during this
+    roundTimeMs: Number(process.env.ROUND_TIME_MS) || 180000, // 3 minutes; 0 disables
     minPlayersToStart: 1,
   },
   // Common combat tunables.

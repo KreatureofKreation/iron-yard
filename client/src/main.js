@@ -53,6 +53,9 @@ const state = {
   cameraPitch: 0.45,
   cameraDist: 4.2,
   cameraDragging: false,
+  spectatorTargetId: null,
+  spectatorOrbitT: 0,
+  match: { phase: "playing", round: 1, phaseMsLeft: 0, roundMsLeft: 0, scoreToWin: 5, winnerId: null, winReason: null },
   weaponTipWorld: new THREE.Vector3(),
   weaponTipTarget: new THREE.Vector3(),
   weaponTipPrev: new THREE.Vector3(),
@@ -243,6 +246,12 @@ net.on("snap", (m) => {
     r.deaths = p.deaths;
   }
 
+  // Match state.
+  if (m.match) {
+    state.match = m.match;
+    HUD.setRoundTimer(m.match.phase, m.match.phaseMsLeft, m.match.roundMsLeft, m.match.round, m.match.scoreToWin);
+  }
+
   // Rebuild scoreboard.
   const rows = m.players.map(p => ({ id: p.id, name: p.name, score: p.score, deaths: p.deaths }))
     .sort((a, b) => b.score - a.score || a.deaths - b.deaths);
@@ -284,15 +293,22 @@ net.on("hit", (m) => {
     HUD.killFeed(`⊕ headshot ${nameFor(m.from)} → ${nameFor(m.to)} (${m.dmg})`);
   }
   spark(scene, m.at, m.kill ? 0.6 : 0.3, m.zone === "head" ? 0xff5050 : 0xff8050);
-  // Lethal head kill: detach helmet from victim's rig as a falling prop.
-  if (m.kill && m.zone === "head") {
+  // Helm break (saved by helm OR lethal head): detach helmet visual.
+  if (m.helmBreak || (m.kill && m.zone === "head")) {
     detachHelmet(m.to, m.at);
-    // Lethal sounds.
-    SFX.death(pan);
   }
-  // Track personal stats.
+  // Lethal head kill: extra sound.
+  if (m.kill && m.zone === "head") SFX.death(pan);
+  if (m.helmBreak && !m.kill) {
+    HUD.killFeed(`⊕ helm broken — ${nameFor(m.to)} survives`);
+  }
+  // Track personal stats + remember killer for spectator camera.
   if (m.from === state.myId && m.kill) statsBump("kills");
-  if (m.to   === state.myId && m.kill) statsBump("deaths");
+  if (m.to   === state.myId && m.kill) {
+    statsBump("deaths");
+    state.spectatorTargetId = m.from;
+    state.spectatorOrbitT = 0;
+  }
 });
 
 net.on("clash", (m) => {
@@ -479,9 +495,27 @@ function frame(t) {
   if (inp.cameraPitchDelta) state.cameraPitch += inp.cameraPitchDelta;
   state.cameraPitch = Math.max(0.05, Math.min(1.2, state.cameraPitch));
   state.cameraDist = clamp(state.cameraDist + inp.zoomDelta, 2.5, 9);
+
+  // Spectator: when dead, look at the killer (or nearest alive enemy) and slowly orbit.
+  let lookTargetPos = state.local.pos;
+  if (!state.local.alive) {
+    state.spectatorOrbitT += dt;
+    let target = null;
+    if (state.spectatorTargetId != null) target = state.remotes.get(state.spectatorTargetId);
+    if (!target || !target.alive) {
+      // Pick first alive remote.
+      for (const r of state.remotes.values()) {
+        if (r.alive) { target = r; state.spectatorTargetId = null; break; }
+      }
+    }
+    if (target) {
+      lookTargetPos = target.rig.root.position;
+      state.cameraYaw += dt * 0.35;   // slow orbit
+    }
+  }
   // Raycast from target (player chest) to ideal camera position; if a wall/pillar is in
   // the way, pull the camera in to that hit point so we don't see through geometry.
-  const camLookAt = new THREE.Vector3(state.local.pos.x, state.local.pos.y + 1.4, state.local.pos.z);
+  const camLookAt = new THREE.Vector3(lookTargetPos.x, lookTargetPos.y + 1.4, lookTargetPos.z);
   // Spherical offset: yaw around player, pitch tilts up.
   const cosP = Math.cos(state.cameraPitch);
   const sinP = Math.sin(state.cameraPitch);

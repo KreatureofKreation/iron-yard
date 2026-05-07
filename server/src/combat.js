@@ -110,6 +110,16 @@ export function resolveHits(players, nowMs) {
       dmg = Math.round(dmg);
       if (dmg <= 0) continue;
 
+      // Helmet save: first lethal headshot is reduced to leave the victim alive (HP 5–15)
+      // and the helm breaks. Subsequent head hits go through normally.
+      let helmBroken = false;
+      if (zone === "head" && t.helmIntact && dmg >= t.hp) {
+        const survival = 5 + Math.floor(Math.random() * 11);
+        dmg = Math.max(1, t.hp - survival);
+        t.helmIntact = false;
+        helmBroken = true;
+      }
+
       t.hp = Math.max(0, t.hp - dmg);
       a.lastHitAtMs.set(t.id, nowMs);
       // Each successful big-swing event costs stamina.
@@ -128,6 +138,7 @@ export function resolveHits(players, nowMs) {
         from: a.id, to: t.id, dmg, speed: tipSpeed, zone, weapon: w.key,
         at: { x: (seg.tip.x + cap.a.x) / 2, y: hitY, z: (seg.tip.z + cap.a.z) / 2 },
       };
+      if (helmBroken) event.helmBreak = true;
       if (t.hp <= 0) {
         killPlayer(t, nowMs);
         a.score++;

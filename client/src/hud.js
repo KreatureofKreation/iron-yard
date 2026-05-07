@@ -79,16 +79,54 @@ export const HUD = {
     const el = document.getElementById("dead");
     if (el) el.style.display = on ? "flex" : "none";
   },
+  setRoundTimer(phase, phaseMsLeft, roundMsLeft, round, scoreToWin) {
+    let el = document.getElementById("round-timer");
+    if (!el) {
+      el = document.createElement("div");
+      el.id = "round-timer";
+      Object.assign(el.style, {
+        position: "absolute", top: "8px", left: "50%", transform: "translateX(-50%)",
+        background: "rgba(0,0,0,0.55)", border: "1px solid #444", borderRadius: "3px",
+        padding: ".25rem .8rem", color: "#f1d9b3", fontSize: ".9rem",
+        fontFamily: "ui-monospace, SFMono-Regular, monospace",
+        pointerEvents: "none",
+      });
+      const hud = document.getElementById("hud");
+      if (hud) hud.append(el);
+    }
+    if (phase === "countdown") {
+      const sLeft = Math.ceil(phaseMsLeft / 1000);
+      el.textContent = `R${round} starts in ${sLeft}…`;
+      // Big banner countdown.
+      const big = document.getElementById("banner");
+      if (big) {
+        big.style.display = "block";
+        big.innerHTML = `<div style="font-size:3rem;">${sLeft}</div>
+          <div style="font-size:.85rem; opacity:.7;">round ${round} · first to ${scoreToWin}</div>`;
+      }
+    } else if (phase === "playing") {
+      const big = document.getElementById("banner");
+      if (big && big.dataset.endShown !== "1") big.style.display = "none";
+      const sLeft = Math.ceil(roundMsLeft / 1000);
+      const mm = Math.floor(sLeft / 60).toString().padStart(2, "0");
+      const ss = (sLeft % 60).toString().padStart(2, "0");
+      el.textContent = roundMsLeft > 0 ? `R${round} · ${mm}:${ss} · to ${scoreToWin}` : `R${round} · to ${scoreToWin}`;
+    }
+  },
   showBanner(html, durationMs = 0) {
     const el = document.getElementById("banner");
     if (!el) return;
     el.innerHTML = html;
     el.style.display = "block";
-    if (durationMs > 0) setTimeout(() => { el.style.display = "none"; }, durationMs);
+    el.dataset.endShown = durationMs > 0 ? "0" : "1";
+    if (durationMs > 0) setTimeout(() => {
+      el.style.display = "none";
+      el.dataset.endShown = "0";
+    }, durationMs);
   },
   hideBanner() {
     const el = document.getElementById("banner");
-    if (el) el.style.display = "none";
+    if (el) { el.style.display = "none"; el.dataset.endShown = "0"; }
   },
   setMenu(visible, statusText) {
     const m = document.getElementById("menu");

@@ -18,6 +18,7 @@ export function makePlayer(name, spawn, weaponKey) {
     onGround: true,
     hp: CONFIG.PLAYER.hp,
     stamina: CONFIG.PLAYER.stamina,
+    helmIntact: true,
     alive: true,
     deadAtMs: 0,
     spawnedAtMs: Date.now(),
@@ -192,6 +193,7 @@ export function maybeRespawn(p, spawn, nowMs) {
   p.impulse = v();
   p.hp = CONFIG.PLAYER.hp;
   p.stamina = CONFIG.PLAYER.stamina;
+  p.helmIntact = true;
   p.alive = true;
   p.spawnedAtMs = nowMs;
   p.lastHitAtMs.clear();

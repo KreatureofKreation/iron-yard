@@ -16,9 +16,11 @@ export class Room {
     this.spawnIdx = 0;
     this.pendingHits = [];
     // Match state.
-    this.matchPhase = "playing";   // "playing" | "intermission"
-    this.intermissionUntil = 0;
+    this.matchPhase = "countdown";       // "countdown" | "playing" | "intermission"
+    this.phaseUntil = Date.now() + CONFIG.MATCH.countdownMs;
+    this.roundEndsAt = 0;
     this.winnerId = null;
+    this.winReason = null;               // "score" | "timeout" | null
     this.roundIndex = 1;
   }
 
@@ -95,17 +97,19 @@ export class Room {
 
     const dtMs = 1000 / CONFIG.TICK_HZ;
     // One sim step per player per tick, regardless of input rate.
+    const frozen = this.matchPhase === "countdown";
     for (const p of this.players.values()) {
       let input;
-      if (p.bot && p.alive) {
+      if (p.bot && p.alive && !frozen) {
         input = botInput(p, this.players, now);
-      } else if (p.pendingInput) {
+      } else if (p.pendingInput && !frozen) {
         input = p.pendingInput;
         p.pendingInput = null;
       } else {
-        // Idle tick — coast with zero movement, last known weapon tip stays put.
+        // Idle / countdown — no movement. Player still gets gravity + tip-vel decay.
+        if (p.pendingInput) p.pendingInput = null;
         input = { mv: { x: 0, y: 0 }, yaw: p.yaw, sprint: false, jump: false,
-                  blocking: false, swinging: p.swinging, weaponTip: p.weaponTip };
+                  blocking: false, swinging: false, weaponTip: p.weaponTip };
       }
       applyInput(p, input, dtMs);
     }
@@ -115,38 +119,64 @@ export class Room {
       if (!p.alive) maybeRespawn(p, this.nextSpawn(), now);
     }
 
-    // Combat (only during playing phase).
-    if (this.matchPhase === "playing") {
+    // Combat / match phase machine.
+    if (this.matchPhase === "countdown") {
+      // Input applied but combat skipped + no movement (server clamps below).
+      if (now >= this.phaseUntil) {
+        this.matchPhase = "playing";
+        this.roundEndsAt = CONFIG.MATCH.roundTimeMs > 0 ? now + CONFIG.MATCH.roundTimeMs : 0;
+        this.pendingHits.push({ kind: "matchStart", round: this.roundIndex, roundEndsAt: this.roundEndsAt });
+      }
+    } else if (this.matchPhase === "playing") {
       const hits = resolveHits(this.players, now);
       if (hits.length) {
         this.pendingHits.push(...hits);
-        // Check for match end.
         for (const e of hits) {
           if (e.kill) {
             const a = this.players.get(e.from);
             if (a && a.score >= CONFIG.MATCH.scoreToWin) {
-              this.matchPhase = "intermission";
-              this.winnerId = a.id;
-              this.intermissionUntil = now + CONFIG.MATCH.intermissionMs;
-              this.pendingHits.push({ kind: "matchEnd", winner: a.id, score: a.score, round: this.roundIndex });
+              this.endRound(a.id, "score", now);
               break;
             }
           }
         }
       }
+      // Round timeout (sudden death: highest score wins; tie → no winner).
+      if (this.matchPhase === "playing" && this.roundEndsAt > 0 && now >= this.roundEndsAt) {
+        let topScore = -1, topId = null, tied = false;
+        for (const p of this.players.values()) {
+          if (p.score > topScore) { topScore = p.score; topId = p.id; tied = false; }
+          else if (p.score === topScore) tied = true;
+        }
+        this.endRound(tied ? null : topId, "timeout", now);
+      }
     } else if (this.matchPhase === "intermission") {
-      if (now >= this.intermissionUntil) {
-        // Reset scores + respawn everyone.
+      if (now >= this.phaseUntil) {
+        // Reset scores + respawn everyone, then drop into countdown.
         for (const p of this.players.values()) {
           p.score = 0; p.deaths = 0;
-          p.alive = false; p.deadAtMs = 0;             // force respawn flow
+          p.alive = false; p.deadAtMs = 0;
+          p.helmIntact = true;
         }
-        this.matchPhase = "playing";
+        this.matchPhase = "countdown";
+        this.phaseUntil = now + CONFIG.MATCH.countdownMs;
         this.winnerId = null;
+        this.winReason = null;
         this.roundIndex++;
-        this.pendingHits.push({ kind: "matchStart", round: this.roundIndex });
       }
     }
+  }
+
+  endRound(winnerId, reason, now) {
+    this.matchPhase = "intermission";
+    this.winnerId = winnerId;
+    this.winReason = reason;
+    this.phaseUntil = now + CONFIG.MATCH.intermissionMs;
+    const winnerScore = winnerId != null ? (this.players.get(winnerId)?.score ?? 0) : 0;
+    this.pendingHits.push({
+      kind: "matchEnd",
+      winner: winnerId, score: winnerScore, reason, round: this.roundIndex,
+    });
   }
 
   // Snapshot of public player state.
@@ -164,6 +194,7 @@ export class Room {
         vel: p.vel,
         hp: p.hp,
         stamina: p.stamina,
+        helmIntact: p.helmIntact,
         alive: p.alive,
         weaponTip: p.weaponTip,
         swinging: p.swinging,
@@ -180,7 +211,9 @@ export class Room {
       match: {
         phase: this.matchPhase,
         winnerId: this.winnerId,
-        intermissionMsLeft: Math.max(0, this.intermissionUntil - Date.now()),
+        winReason: this.winReason,
+        phaseMsLeft: Math.max(0, this.phaseUntil - Date.now()),
+        roundMsLeft: this.roundEndsAt > 0 ? Math.max(0, this.roundEndsAt - Date.now()) : 0,
         scoreToWin: CONFIG.MATCH.scoreToWin,
         round: this.roundIndex,
       },
