@@ -168,3 +168,65 @@ export function tickRagdolls(now = performance.now()) {
 export function clearAllRagdolls() {
   while (activeRagdolls.length) activeRagdolls.pop().destroy();
 }
+
+// Spawn a few static-ish barrels at arena edges. They live in the same Rapier world,
+// so player-controlled "kick" can apply impulses.
+const arenaProps = [];
+export function spawnArenaProps(scene, points) {
+  if (!rapierReady) return;
+  for (const p of points) {
+    const radius = 0.45, height = 0.95;
+    const desc = RAPIER.RigidBodyDesc.dynamic().setTranslation(p.x, p.y + height / 2 + 0.2, p.z);
+    desc.setLinearDamping(0.7); desc.setAngularDamping(0.9);
+    const body = world.createRigidBody(desc);
+    const cd = RAPIER.ColliderDesc.cylinder(height / 2, radius).setDensity(2.5).setFriction(0.95);
+    world.createCollider(cd, body);
+
+    const mat = new THREE.MeshStandardMaterial({ color: 0x6a4a30, roughness: 0.9 });
+    const ringMat = new THREE.MeshStandardMaterial({ color: 0x3a2a1a, roughness: 0.9 });
+    const grp = new THREE.Group();
+    const m = new THREE.Mesh(new THREE.CylinderGeometry(radius, radius, height, 12), mat);
+    m.castShadow = true; m.receiveShadow = true;
+    grp.add(m);
+    for (const off of [-0.30, 0, 0.30]) {
+      const r = new THREE.Mesh(new THREE.TorusGeometry(radius * 0.96, 0.04, 6, 16), ringMat);
+      r.position.y = off;
+      r.rotation.x = Math.PI / 2;
+      grp.add(r);
+    }
+    scene.add(grp);
+    arenaProps.push({ body, mesh: grp });
+  }
+}
+
+export function applyKickToProps(playerPos, playerVel) {
+  if (!rapierReady) return;
+  const speedSq = playerVel.x * playerVel.x + playerVel.z * playerVel.z;
+  if (speedSq < 4) return;  // need to be moving meaningfully
+  for (const p of arenaProps) {
+    const t = p.body.translation();
+    const dx = t.x - playerPos.x, dz = t.z - playerPos.z;
+    const d2 = dx * dx + dz * dz;
+    if (d2 > 1.3 * 1.3) continue;
+    const inv = 1 / Math.max(0.1, Math.sqrt(d2));
+    const force = Math.min(1, speedSq / 25) * 8;
+    p.body.applyImpulse({ x: dx * inv * force, y: 0, z: dz * inv * force }, true);
+  }
+}
+
+export function syncProps() {
+  for (const p of arenaProps) {
+    const t = p.body.translation();
+    const r = p.body.rotation();
+    p.mesh.position.set(t.x, t.y, t.z);
+    p.mesh.quaternion.set(r.x, r.y, r.z, r.w);
+  }
+}
+
+export function clearArenaProps(scene) {
+  for (const p of arenaProps) {
+    scene.remove(p.mesh);
+    world.removeRigidBody(p.body);
+  }
+  arenaProps.length = 0;
+}

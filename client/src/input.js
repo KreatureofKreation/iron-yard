@@ -55,17 +55,24 @@ export class Input {
     document.addEventListener("pointerlockchange", () => {
       this._pointerLocked = document.pointerLockElement != null;
     });
-    // Click anywhere on the game canvas to capture the mouse.
+    // Click anywhere on the game canvas to capture the mouse — DESKTOP ONLY.
+    // Mobile/touch can't pointer-lock and trying breaks the menu flow.
     const tryLock = () => {
+      if (this.touchActive) return;                       // never on touch
+      if (this._pointerLocked) return;
       const canvas = document.querySelector("#app canvas");
-      if (canvas && !this._pointerLocked) canvas.requestPointerLock?.();
+      if (canvas && canvas.requestPointerLock) {
+        try { canvas.requestPointerLock(); } catch {}
+      }
     };
     window.addEventListener("mousedown", (e) => {
       if (e.button === 0) this._mouse.down = true;
-      // Click in the game area also requests lock (skip if clicking a button/input).
+      if (this.touchActive) return;
       if (!this._pointerLocked) {
         const tag = (e.target && e.target.tagName) || "";
-        if (tag !== "INPUT" && tag !== "BUTTON" && tag !== "LABEL") tryLock();
+        // Only lock when click hit the canvas — anything inside the menu / HUD inputs is skipped.
+        const onCanvas = e.target && e.target.tagName === "CANVAS";
+        if (onCanvas && tag !== "INPUT" && tag !== "BUTTON" && tag !== "LABEL") tryLock();
       }
     });
     window.addEventListener("mouseup", (e) => {

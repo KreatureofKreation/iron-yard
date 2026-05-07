@@ -13,9 +13,9 @@ const WEAPONS = ["arming", "longsword", "mace", "spear"];
 // Difficulty tunings: hz scales swing rate; aimSlop adds noise to facing; dodgeFactor scales
 // the threat-detection threshold (lower = dodges more); strafeBoost when in range.
 const BOT_DIFFICULTY = {
-  easy:   { swingHz: 4, aimSlop: 0.30, dodgeFactor: 0.0, strafeBoost: 0.4, blockChance: 0.4 },
-  medium: { swingHz: 7, aimSlop: 0.10, dodgeFactor: 0.6, strafeBoost: 0.6, blockChance: 0.7 },
-  hard:   { swingHz: 9, aimSlop: 0.04, dodgeFactor: 1.0, strafeBoost: 0.8, blockChance: 0.85 },
+  easy:   { swingHz: 3, aimSlop: 0.45, dodgeFactor: 0.0, strafeBoost: 0.3, blockChance: 0.25, hesitationMs: 700 },
+  medium: { swingHz: 5, aimSlop: 0.20, dodgeFactor: 0.4, strafeBoost: 0.5, blockChance: 0.55, hesitationMs: 350 },
+  hard:   { swingHz: 7, aimSlop: 0.08, dodgeFactor: 0.8, strafeBoost: 0.7, blockChance: 0.80, hesitationMs: 100 },
 };
 export function botDifficultyTuning(level = "medium") {
   return BOT_DIFFICULTY[level] || BOT_DIFFICULTY.medium;
@@ -134,11 +134,17 @@ export function botInput(bot, players, nowMs) {
     mv.x = Math.sin(nowMs / 700 + bot.id) * 0.6;        // in range — strafe
   }
 
-  // Unstick: if not progressing for several samples, jitter sideways and try jumping.
+  // Unstick: if not progressing for several samples, jitter sideways. If VERY stuck,
+  // reverse direction and turn ~90° to peel away from a wall/pillar.
   const stuck = detectStuck(bot, nowMs);
   if (stuck >= 2) {
-    mv.x = (Math.sin(nowMs / 200 + bot.id * 1.7)) * (0.7 + (stuck * 0.05));
+    mv.x = Math.sin(nowMs / 200 + bot.id * 1.7) * (0.7 + (stuck * 0.05));
     mv.y = (stuck > 4 ? 0.5 : 1) * (Math.sign(mv.y || 1));
+  }
+  if (stuck >= 6) {
+    // Heavily stuck: back out and rotate so we don't keep ramming the same wall.
+    mv.x = (bot.id % 2 ? 1 : -1) * 0.9;
+    mv.y = -0.8;
   }
 
   // Block when low HP and target is close.
@@ -148,7 +154,14 @@ export function botInput(bot, players, nowMs) {
   const inRange = dist <= engage + 0.5;
   const swingHz = tune.swingHz + (bot.id % 3);
   const swingPhase = nowMs / 1000 * swingHz + bot.id * 0.7;
-  const swingAng = Math.sin(swingPhase) * 1.05;       // ±~60°
+  // Hesitation gate: bot swings hard for 400ms, then pauses for `hesitationMs` before
+  // the next attack. Easy bots are very passive; hard bots barely pause.
+  const cycleMs = (tune.hesitationMs ?? 250) + 400;
+  const cycleFrac = (nowMs % cycleMs) / cycleMs;
+  const swingActive = cycleFrac > (tune.hesitationMs ?? 250) / cycleMs;
+  // Stunned target → always swing fully (killshot).
+  const fullSwing = swingActive || targetStunned;
+  const swingAng = Math.sin(swingPhase) * (fullSwing ? 1.05 : 0.15);
   const heightOsc = 1.5 + Math.cos(swingPhase * 0.5) * 0.25;
   const aimYaw = inRange ? yaw + swingAng : yaw + Math.sin(nowMs / 500 + bot.id) * 0.2;
 

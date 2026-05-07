@@ -6,7 +6,8 @@ import { buildScene } from "./scene.js";
 import { buildCharacter, WEAPON_LIST } from "./character.js";
 import { HUD } from "./hud.js";
 import * as SFX from "./audio.js";
-import { initRapier, rapierStep, createRagdoll, tickRagdolls, clearAllRagdolls } from "./ragdoll.js";
+import { initRapier, rapierStep, createRagdoll, tickRagdolls, clearAllRagdolls,
+         spawnArenaProps, applyKickToProps, syncProps, clearArenaProps } from "./ragdoll.js";
 
 // ---------- Renderer / scene ----------
 const renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -174,6 +175,14 @@ net.on("welcome", (m) => {
   }
   // Rebuild scene with arena info.
   scene = buildScene().scene;
+  // Spawn a few barrels at arena edges (after Rapier ready).
+  clearArenaProps(scene);
+  const propPositions = [
+    { x: -10, y: 0, z: -10 }, { x:  10, y: 0, z: -10 },
+    { x: -10, y: 0, z:  10 }, { x:  10, y: 0, z:  10 },
+    { x:   0, y: 0, z: -12 }, { x:   0, y: 0, z:  12 },
+  ];
+  spawnArenaProps(scene, propPositions);
   // Build local rig with chosen weapon.
   const pal = paletteFor(m.id);
   state.rig = buildCharacter({ ...pal, isLocal: true, weaponKey: state.weaponKey });
@@ -207,6 +216,8 @@ net.on("snap", (m) => {
       state.local.crippleMsLeft = p.crippleMsLeft || 0;
       state.local.stunMsLeft = p.stunMsLeft || 0;
       state.local.bleedMsLeft = p.bleedMsLeft || 0;
+      state._myScore = p.score || 0;
+      state._myDeaths = p.deaths || 0;
       HUD.setHp(p.hp, RUNTIME.player.hp);
       HUD.setStatus({ stun: p.stunMsLeft || 0, bleed: p.bleedMsLeft || 0, cripple: p.crippleMsLeft || 0 });
       HUD.setStamina(p.stamina ?? 100, RUNTIME.player.stamina ?? 100);
@@ -409,9 +420,28 @@ net.on("pickup", (m) => {
 });
 
 net.on("matchEnd", (m) => {
-  const winName = m.winner === state.myId ? "you" : (state.remotes.get(m.winner)?.name ?? `#${m.winner}`);
-  HUD.showBanner(`<div>ROUND ${m.round} · ${escapeHtml(winName)} wins ${m.score}-?</div>
-    <div style="font-size:.85rem; opacity:.7; margin-top:.4rem;">next round in ${(CLIENT_MATCH_INTERMISSION_MS/1000)|0}s</div>`);
+  const winName = m.winner === state.myId ? "you" : (state.remotes.get(m.winner)?.name ?? (m.winner ? `#${m.winner}` : "no one"));
+  // Summary table from current snapshot of remote scores + local.
+  const rows = [];
+  if (state.local.alive !== undefined) {
+    rows.push({ name: localStorage.getItem("ironyard.name") || "you", score: state._myScore || 0, deaths: state._myDeaths || 0, me: true });
+  }
+  for (const [id, r] of state.remotes) rows.push({ name: r.name, score: r.score || 0, deaths: r.deaths || 0, me: false });
+  rows.sort((a, b) => b.score - a.score || a.deaths - b.deaths);
+  const tableHtml = rows.map(r => `<tr style="${r.me ? 'color:#c8a97e;' : ''}">
+    <td style="padding:.15rem .8rem; text-align:left;">${escapeHtml(r.name)}</td>
+    <td style="padding:.15rem .8rem;">${r.score}</td>
+    <td style="padding:.15rem .8rem; opacity:.6;">${r.deaths}</td></tr>`).join("");
+  const reasonNote = m.reason === "timeout" ? "time over" : "first to score";
+  HUD.showBanner(
+    `<div style="font-size:1.4rem;">ROUND ${m.round} · ${escapeHtml(winName)} wins</div>
+     <div style="font-size:.7rem; opacity:.6; letter-spacing:.2em; margin:.2rem 0 .6rem;">${reasonNote}</div>
+     <table style="margin: 0 auto; font-size:.85rem; border-collapse:collapse;">
+       <thead><tr style="opacity:.6;"><th style="padding:.15rem .8rem; text-align:left;">name</th><th>K</th><th>D</th></tr></thead>
+       <tbody>${tableHtml}</tbody>
+     </table>
+     <div style="font-size:.75rem; opacity:.5; margin-top:.6rem;">next round soon…</div>`
+  );
   if (m.winner === state.myId) {
     statsBump("wins");
   } else {
@@ -487,6 +517,9 @@ function frame(t) {
     // Predict locally; server reconciles via snapshots.
     state.local.pos.x += mvNX * speed * dt;
     state.local.pos.z += mvNZ * speed * dt;
+    // Track an approximate horizontal velocity for prop-kick + UX hooks.
+    state.local.vel.x = mvNX * speed;
+    state.local.vel.z = mvNZ * speed;
     if (inp.jump && state.local.onGround) { state.local.vel.y = 5.5; state.local.onGround = false; }
     state.local.vel.y += -18 * dt;
     state.local.pos.y += state.local.vel.y * dt;
@@ -497,6 +530,16 @@ function frame(t) {
     if (state.local.pos.x >  half) state.local.pos.x =  half;
     if (state.local.pos.z < -half) state.local.pos.z = -half;
     if (state.local.pos.z >  half) state.local.pos.z =  half;
+
+    // Bleed wobble: while bleeding, add small high-frequency jitter to aim.
+    if ((state.local.bleedMsLeft || 0) > 0) {
+      const t = performance.now() / 1000;
+      const wob = 0.06 + Math.min(0.10, (state.local.bleedMsLeft / 4000) * 0.05);
+      inp.aim = {
+        x: inp.aim.x + Math.sin(t * 9.1) * wob,
+        y: inp.aim.y + Math.cos(t * 7.7) * wob,
+      };
+    }
 
     // Compute target weapon tip from aim, then lerp the actual tip toward it with
     // mass-dependent rate (heavier weapons lag more — that's the "weight" feel).
@@ -656,13 +699,25 @@ function frame(t) {
     if (m < 0.01) state.shake.mag = 0;
   }
 
-  // Physics tick (ragdolls).
+  // Physics tick (ragdolls + arena props).
   rapierStep(dt);
   tickRagdolls();
+  if (state.local.alive) {
+    applyKickToProps(state.local.pos, state.local.vel);
+  }
+  syncProps();
 
   HUD.setStance(stanceLabel(inp));
   updateNameplates();
   tickFallingProps(dt);
+
+  // Lock-hint overlay: visible only after we've joined and pointer isn't locked.
+  const hint = document.getElementById("lock-hint");
+  if (hint) {
+    const inGame = state.serverConfigReceived;
+    const locked = document.pointerLockElement != null;
+    hint.style.display = (inGame && !locked && !input.touchActive) ? "block" : "none";
+  }
 
   renderer.render(scene, camera);
   requestAnimationFrame(frame);

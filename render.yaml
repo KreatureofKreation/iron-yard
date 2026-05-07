@@ -17,4 +17,4 @@ services:
       - key: BOT_COUNT
         value: "1"
       - key: BOT_DIFFICULTY
-        value: medium
+        value: easy
