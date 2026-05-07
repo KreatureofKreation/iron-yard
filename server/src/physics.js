@@ -34,6 +34,7 @@ export class PhysicsWorld {
     this.eventQueue = new RAPIER.EventQueue(true);
     this.swords = new Map();         // playerId -> { body, collider, weaponMass, length }
     this.bodies = new Map();         // playerId -> { body, collider }
+    this.torsos = new Map();         // playerId -> { body, joint } — active ragdoll torso
     this.colliderToPlayerSword = new Map();  // colliderHandle -> playerId (attacker)
     this.colliderToPlayerBody  = new Map();  // colliderHandle -> playerId (victim)
     // Per-tick contact register: attackerId -> { victimId -> impactSpeed }
@@ -66,6 +67,62 @@ export class PhysicsWorld {
     const b = this.bodies.get(playerId);
     if (!b) return;
     b.body.setNextKinematicTranslation({ x: pos.x, y: pos.y + 0.9, z: pos.z });
+  }
+
+  // Attach a dynamic torso rigid body anchored to the player's kinematic capsule via
+  // a spherical joint. Strong restorative motors keep it roughly upright; perturbations
+  // (e.g. impulses from sword reactions) cause visible wobble.
+  attachTorso(playerId, pos) {
+    if (this.torsos.has(playerId)) this.detachTorso(playerId);
+    const b = this.bodies.get(playerId);
+    if (!b) return null;
+    const desc = RAPIER.RigidBodyDesc.dynamic()
+      .setTranslation(pos.x, pos.y + 1.10, pos.z)
+      .setLinearDamping(4.0)
+      .setAngularDamping(8.0);
+    const torso = this.world.createRigidBody(desc);
+    const cd = RAPIER.ColliderDesc.cuboid(0.30, 0.30, 0.18)
+      .setDensity(60)
+      .setCollisionGroups(0);  // no collision — visual / dynamics only
+    this.world.createCollider(cd, torso);
+    // Spherical joint pinning torso bottom to the body capsule top.
+    const params = RAPIER.JointData.spherical(
+      { x: 0, y: 0.5, z: 0 },        // anchor on body capsule (top)
+      { x: 0, y: -0.30, z: 0 },      // anchor on torso (bottom)
+    );
+    const joint = this.world.createImpulseJoint(params, b.body, torso, true);
+    this.torsos.set(playerId, { body: torso, joint });
+    return torso;
+  }
+
+  detachTorso(playerId) {
+    const t = this.torsos.get(playerId);
+    if (!t) return;
+    if (t.joint) this.world.removeImpulseJoint(t.joint, true);
+    this.world.removeRigidBody(t.body);
+    this.torsos.delete(playerId);
+  }
+
+  // Apply a soft restorative torque toward upright + reads current rotation.
+  driveTorso(playerId, dt = 1 / 30) {
+    const t = this.torsos.get(playerId);
+    if (!t) return;
+    // Pull rotation back toward identity (upright) using a small angular spring.
+    // Rapier exposes body.rotation() as a quaternion (xyzw).
+    const r = t.body.rotation();
+    // For small angles, the imaginary part of the quaternion approximates axis*angle/2.
+    const ax = -r.x * 24;          // stiffness toward upright
+    const ay = -r.y * 24;
+    const az = -r.z * 24;
+    const m = t.body.mass() || 1;
+    t.body.applyTorqueImpulse({ x: ax * m * dt, y: ay * m * dt, z: az * m * dt }, true);
+  }
+
+  torsoState(playerId) {
+    const t = this.torsos.get(playerId);
+    if (!t) return null;
+    const rot = t.body.rotation();
+    return { rot: { x: rot.x, y: rot.y, z: rot.z, w: rot.w } };
   }
 
   attachSword(playerId, weaponMass, length, startPos = { x: 0, y: 1.4, z: 0 }) {
