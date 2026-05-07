@@ -460,7 +460,7 @@ net.on("leave", (m) => {
   if (r) { scene.remove(r.rig.root); state.remotes.delete(m.id); }
 });
 net.on("full",  () => HUD.setMenu(true, "arena full — try later"));
-net.on("close", () => HUD.setMenu(true, "disconnected"));
+net.on("close", () => { window.IRONYARD_INGAME = false; HUD.setMenu(true, "disconnected"); });
 net.on("chat",  (m) => HUD.log(`${m.name}: ${m.text}`));
 
 function nameFor(id) {
@@ -1055,6 +1055,7 @@ async function play() {
     await net.connect(url);
     net.send({ t: "join", name, weapon: state.weaponKey });
     HUD.setMenu(false);
+    window.IRONYARD_INGAME = true;
     requestAnimationFrame(frame);
     setInterval(() => net.sendPing(), 1000);
   } catch (err) {

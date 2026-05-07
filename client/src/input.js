@@ -111,14 +111,17 @@ export class Input {
     const stickR = makeStick("stick-right", "right");
     document.body.append(stickL.el, stickR.el);
 
+    const isTouch = () => matchMedia("(hover: none) and (pointer: coarse)").matches;
+    const isInGame = () => !!window.IRONYARD_INGAME;
     const updateLayout = () => {
-      // Show stick UI on touch devices only.
-      const touch = matchMedia("(hover: none) and (pointer: coarse)").matches;
-      stickL.el.style.display = touch ? "block" : "none";
-      stickR.el.style.display = touch ? "block" : "none";
-      this.touchActive = touch;
+      const showSticks = isTouch() && isInGame();
+      stickL.el.style.display = showSticks ? "block" : "none";
+      stickR.el.style.display = showSticks ? "block" : "none";
+      this.touchActive = isTouch();
     };
     updateLayout();
+    // Re-check periodically so sticks appear when the user clicks PLAY.
+    setInterval(updateLayout, 250);
     window.addEventListener("resize", updateLayout);
 
     const handleStart = (zone, e) => {
@@ -135,7 +138,23 @@ export class Input {
       return null;
     };
 
+    // Touch sticks must NOT eat menu/button taps. Gate on in-game state and skip when
+    // the touch target is inside any UI element (menu, settings, action buttons).
+    const isTouchTargetUI = (target) => {
+      let n = target;
+      while (n && n !== document.body) {
+        const id = n.id || "";
+        if (id === "menu" || id === "settings" || id === "settings-btn" ||
+            id === "touch-buttons") return true;
+        if (n.tagName === "BUTTON" || n.tagName === "INPUT" || n.tagName === "LABEL") return true;
+        n = n.parentNode;
+      }
+      return false;
+    };
+
     document.addEventListener("touchstart", (e) => {
+      if (!isInGame()) return;                  // menu open → let buttons receive the tap
+      if (isTouchTargetUI(e.target)) return;
       for (const t of e.changedTouches) {
         const halfX = window.innerWidth / 2;
         if (t.clientX < halfX && stickL.tid == null) {
@@ -148,11 +167,13 @@ export class Input {
     }, { passive: false });
 
     document.addEventListener("touchmove", (e) => {
+      if (!isInGame()) return;
       for (const stick of [stickL, stickR]) {
         const a = findActive(stick === stickL ? "left" : "right", e.changedTouches);
         if (a) a.stick.move(a.t.clientX, a.t.clientY);
       }
-      e.preventDefault();
+      // Only prevent default if we are actually using a stick this turn.
+      if (stickL.tid != null || stickR.tid != null) e.preventDefault();
     }, { passive: false });
 
     const onEnd = (e) => {
@@ -167,7 +188,7 @@ export class Input {
     this._stickL = stickL;
     this._stickR = stickR;
 
-    // Touch buttons: jump, sprint, block.
+    // Touch buttons: jump, sprint, block. Hidden until in-game.
     const buttonRow = document.createElement("div");
     buttonRow.id = "touch-buttons";
     Object.assign(buttonRow.style, {
@@ -176,6 +197,7 @@ export class Input {
       display: "none", flexDirection: "row", gap: "12px",
       zIndex: 20, userSelect: "none",
     });
+    // Touch buttons live forever in DOM; only made visible in-game.
     document.body.append(buttonRow);
     const mkBtn = (label, prop, isToggle = false) => {
       const b = document.createElement("div");
@@ -208,9 +230,10 @@ export class Input {
     buttonRow.append(btnRotL, btnJump, btnBlock, btnSprint, btnRotR);
 
     const showButtons = () => {
-      buttonRow.style.display = this.touchActive ? "flex" : "none";
+      buttonRow.style.display = (this.touchActive && isInGame()) ? "flex" : "none";
     };
     showButtons();
+    setInterval(showButtons, 250);
     window.addEventListener("resize", showButtons);
   }
 
