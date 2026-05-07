@@ -143,7 +143,18 @@ export function buildCharacter({ color = 0x9aa0a8, accent = 0xc8a97e, isLocal = 
      * Per-frame animation update.
      * mvSpeed: 0..~7 (m/s). swinging boolean. dt seconds. blocking boolean.
      */
-    animate(dt, { mvSpeed = 0, swinging = false, blocking = false, alive = true, swingLat = 0, swingFwd = 0, crippled = false, stunned = false } = {}) {
+    animate(dt, { mvSpeed = 0, swinging = false, blocking = false, alive = true, swingLat = 0, swingFwd = 0, crippled = false, stunned = false, verAim = 0, tipDist = 0 } = {}) {
+      // Shoulder lift on high stance — raises the arm's anchor when aim points up.
+      const lift = Math.max(-0.05, Math.min(0.20, verAim * 0.18));
+      weaponRig.position.y = armPivotY + lift;
+      // Dynamic elbow bend (two-bone IK approx): the closer the tip is to the shoulder,
+      // the more the elbow folds. Static base 0.20 keeps a baseline kink even at full reach.
+      const totalReach = upperArmLen + forearmLen;
+      const chord = Math.min(Math.max(tipDist || 0, 0.02), totalReach);
+      // acos(chord / totalReach) is 0 at full reach, π/2 at zero — gives a natural fold.
+      const ratio = chord / totalReach;
+      const bend = Math.acos(Math.max(-1, Math.min(1, ratio)));
+      elbow.rotation.x = 0.20 + bend * 0.55;
       anim.swayPhase += dt;
       if (alive) {
         const stride = THREE.MathUtils.clamp(mvSpeed / 5, 0, 1);

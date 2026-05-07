@@ -614,11 +614,16 @@ function frame(t) {
     const cy = Math.cos(-state.local.yaw), sy = Math.sin(-state.local.yaw);
     const swingLat =  cy * state.weaponTipVel.x + sy * state.weaponTipVel.z;
     const swingFwd = -sy * state.weaponTipVel.x + cy * state.weaponTipVel.z;
+    // Distance from shoulder to current world tip (for elbow IK).
+    shoulderWorld(state.local.pos, state.local.yaw, tmpV);
+    const tipDistLocal = state.weaponTipWorld.distanceTo(tmpV);
     state.rig.animate(dt, {
       mvSpeed, swinging: state.weaponTipVel.length() > 4, blocking: !!inp.block,
       alive: state.local.alive, swingLat, swingFwd,
       crippled: (state.local.crippleMsLeft || 0) > 0,
       stunned:  (state.local.stunMsLeft    || 0) > 0,
+      verAim:   inp.aim.y,
+      tipDist:  tipDistLocal,
     });
     state.rig.setInvuln((state.local.invulnMs || 0) > 0, performance.now() / 1000);
     state.rig.pushTrail(state.weaponTipWorld, state.weaponTipVel.length());
@@ -813,10 +818,17 @@ function interpolateRemote(r, renderTime) {
   const snapDtMs = Math.max(1, b.ts - a.ts);
   const dx = b.pos.x - a.pos.x, dz = b.pos.z - a.pos.z;
   const mvSpeed = Math.hypot(dx, dz) / (snapDtMs / 1000);
+  // Approximate shoulder→tip distance for elbow IK.
+  shoulderWorld(posV, yaw, tmpV);
+  const remoteTipDist = tipV.distanceTo(tmpV);
+  // verAim approximated from tip's vertical offset above shoulder.
+  const remoteVerAim = (tipV.y - tmpV.y) / Math.max(0.5, RUNTIME.weapon.length || 1);
   r.rig.animate(1 / 60, {
     mvSpeed, swinging: false, blocking: false, alive: !!r.alive,
     crippled: (r.crippleMsLeft || 0) > 0,
     stunned:  (r.stunMsLeft    || 0) > 0,
+    verAim: remoteVerAim,
+    tipDist: remoteTipDist,
   });
   r.rig.setInvuln((r.invulnMs || 0) > 0, performance.now() / 1000);
   // Estimate tip speed from snap delta to drive trail.
