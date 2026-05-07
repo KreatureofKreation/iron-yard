@@ -189,9 +189,10 @@ export class Room {
     for (const p of this.players.values()) {
       if (p.zombieUntilMs > now) continue;
       this.physics.setBodyPos(p.id, p.pos);
-      const stunned = now < p.stunUntilMs;
-      const dead    = !p.alive;
-      if (stunned || dead) {
+      const stunned  = now < p.stunUntilMs;
+      const disarmed = now < p.disarmedUntilMs;
+      const dead     = !p.alive;
+      if (stunned || dead || disarmed) {
         this.physics.setSwordGravity(p.id, true);
       } else {
         this.physics.setSwordGravity(p.id, false);
@@ -348,6 +349,7 @@ export class Room {
         crippleMsLeft: Math.max(0, p.crippledUntilMs - Date.now()),
         stunMsLeft:    Math.max(0, p.stunUntilMs    - Date.now()),
         bleedMsLeft:   Math.max(0, p.bleedUntilMs   - Date.now()),
+        disarmedMsLeft:Math.max(0, p.disarmedUntilMs- Date.now()),
         alive: p.alive,
         weaponTip: p.weaponTip,
         swinging: p.swinging,

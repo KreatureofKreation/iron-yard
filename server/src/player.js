@@ -42,6 +42,7 @@ export function makePlayer(name, spawn, weaponKey) {
     killStreak: 0,
     crippledUntilMs: 0,
     stunUntilMs: 0,
+    disarmedUntilMs: 0,
     bleedUntilMs: 0,
     bleedDmgPerSec: 0,
     bleedAccum: 0,
@@ -212,6 +213,7 @@ export function maybeRespawn(p, spawn, nowMs) {
   p.helmIntact = true;
   p.crippledUntilMs = 0;
   p.stunUntilMs = 0;
+  p.disarmedUntilMs = 0;
   p.bleedUntilMs = 0;
   p.bleedDmgPerSec = 0;
   p.bleedAccum = 0;

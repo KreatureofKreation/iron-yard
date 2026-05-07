@@ -16,8 +16,19 @@ export function resolveHits(players, nowMs, physics) {
     const until = nowMs + 250;
     a.parryUntilMs.set(b.id, until);
     b.parryUntilMs.set(a.id, until);
+
+    // Disarm: if relative speed is high AND one swing is markedly faster, the slower
+    // player's grip fails — sword drops for ~1.5s.
+    const aSp = len(a.weaponTipVel);
+    const bSp = len(b.weaponTipVel);
+    let disarmed = null;
+    if (c.speed > 12 && Math.abs(aSp - bSp) > 4) {
+      disarmed = aSp < bSp ? a : b;
+      disarmed.disarmedUntilMs = Math.max(disarmed.disarmedUntilMs, nowMs + 1500);
+    }
     events.push({
       kind: "clash", a: a.id, b: b.id, speed: c.speed,
+      disarmed: disarmed ? disarmed.id : 0,
       at: { x: (a.weaponTip.x + b.weaponTip.x) / 2, y: (a.weaponTip.y + b.weaponTip.y) / 2, z: (a.weaponTip.z + b.weaponTip.z) / 2 },
     });
   }
