@@ -185,11 +185,18 @@ export class Room {
     }
 
     // 2) Sync each player's kinematic body capsule to their current pos, drive sword,
-    //    then step the world (which raises collision events from the queue).
+    //    then step the world. Stunned players DROP their sword (gravity on, no drive).
     for (const p of this.players.values()) {
       if (p.zombieUntilMs > now) continue;
       this.physics.setBodyPos(p.id, p.pos);
-      this.physics.driveSword(p.id, p.weaponTipTarget, dt);
+      const stunned = now < p.stunUntilMs;
+      const dead    = !p.alive;
+      if (stunned || dead) {
+        this.physics.setSwordGravity(p.id, true);
+      } else {
+        this.physics.setSwordGravity(p.id, false);
+        this.physics.driveSword(p.id, p.weaponTipTarget, dt);
+      }
     }
     this.physics.step();
 
@@ -230,9 +237,13 @@ export class Room {
       }
     }
 
-    // Respawn dead.
+    // Respawn dead. After respawn, reset sword to player's hand area.
     for (const p of this.players.values()) {
-      if (!p.alive) maybeRespawn(p, this.nextSpawn(), now);
+      if (!p.alive) {
+        if (maybeRespawn(p, this.nextSpawn(), now)) {
+          this.physics.resetSwordPos(p.id, { x: p.pos.x, y: p.pos.y + 1.4, z: p.pos.z });
+        }
+      }
     }
 
     // Weapon-rack pickups.

@@ -190,6 +190,22 @@ export class PhysicsWorld {
     };
   }
 
+  // Toggle gravity on a sword. Used to "drop" the weapon (e.g. while stunned).
+  setSwordGravity(playerId, on) {
+    const sw = this.swords.get(playerId);
+    if (!sw) return;
+    sw.body.setGravityScale(on ? 1 : 0, true);
+  }
+
+  // Snap sword body back to a position with zero velocity (e.g. on respawn).
+  resetSwordPos(playerId, pos) {
+    const sw = this.swords.get(playerId);
+    if (!sw) return;
+    sw.body.setTranslation({ x: pos.x, y: pos.y, z: pos.z }, true);
+    sw.body.setLinvel({ x: 0, y: 0, z: 0 }, true);
+    sw.body.setAngvel({ x: 0, y: 0, z: 0 }, true);
+  }
+
   // Replace the body for a weapon-swap. Keeps current position so the swap looks smooth.
   swapWeapon(playerId, newMass, newLength) {
     const sw = this.swords.get(playerId);
