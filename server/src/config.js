@@ -15,6 +15,7 @@ export const CONFIG = {
     hp: 100,
     respawnMs: 3000,
     spawnInvulnMs: 1500,
+    reconnectGraceMs: 15000,          // keep slot for this long after a disconnect
     accel: 28,                 // m/s² horizontal locomotion responsiveness
     // Stamina.
     stamina: 100,

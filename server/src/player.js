@@ -34,6 +34,8 @@ export function makePlayer(name, spawn, weaponKey) {
     lastInputSeq: 0,
     rtt: 0,
     socket: null,
+    sessionId: null,                  // client-supplied; reconnect identity
+    zombieUntilMs: 0,                 // > 0 while disconnected awaiting rejoin
     score: 0,
     deaths: 0,
     pendingInput: null,

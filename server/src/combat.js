@@ -52,7 +52,7 @@ export function resolveHits(players, nowMs) {
   // ---- Damage resolution ----
   for (const a of arr) {
     if (!a.alive || a.blocking) continue;
-    // Spawn invulnerability is symmetric: protected players also can't deal damage.
+    if (a.zombieUntilMs > nowMs) continue;
     if (nowMs - a.spawnedAtMs < CONFIG.PLAYER.spawnInvulnMs) continue;
     const w = weaponOf(a);
     const seg = weaponSegment(a);
@@ -60,6 +60,7 @@ export function resolveHits(players, nowMs) {
     if (tipSpeed < w.minSpeed) continue;
     for (const t of arr) {
       if (t === a || !t.alive) continue;
+      if (t.zombieUntilMs > nowMs) continue;
       if (nowMs - t.spawnedAtMs < CONFIG.PLAYER.spawnInvulnMs) continue;
       const last = a.lastHitAtMs.get(t.id) || 0;
       if (nowMs - last < w.hitCooldownMs) continue;

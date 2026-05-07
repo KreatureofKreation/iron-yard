@@ -82,6 +82,24 @@ wss.on("connection", (sock) => {
     if (!msg || typeof msg !== "object") return;
 
     if (msg.t === "join") {
+      // Resume an existing slot if the client presents a known sessionId.
+      if (typeof msg.sessionId === "string" && msg.sessionId) {
+        const z = room.findZombieBySession(msg.sessionId);
+        if (z) {
+          z.socket = sock;
+          z.zombieUntilMs = 0;
+          player = z;
+          send(sock, {
+            t: "welcome", id: player.id, resumed: true,
+            config: { tickHz: CONFIG.TICK_HZ, snapHz: CONFIG.SNAP_HZ,
+                      player: CONFIG.PLAYER, weapons: CONFIG.WEAPONS, combat: CONFIG.COMBAT },
+            arena: room.arenaInfo(),
+            you: { weaponKey: player.weaponKey, spawnPos: player.pos },
+          });
+          broadcast({ t: "join", player: { id: player.id, name: player.name, weaponKey: player.weaponKey, resumed: true } }, player.id);
+          return;
+        }
+      }
       if (room.isFull()) {
         // No more player slots — accept as spectator.
         room.spectators.add(sock);
@@ -97,6 +115,7 @@ wss.on("connection", (sock) => {
         return;
       }
       player = room.addPlayer(msg.name, sock, msg.weapon);
+      if (typeof msg.sessionId === "string") player.sessionId = msg.sessionId;
       send(sock, {
         t: "welcome",
         id: player.id,
@@ -135,6 +154,11 @@ wss.on("connection", (sock) => {
 
   sock.on("close", () => {
     if (player) {
+      // If the client supplied a sessionId, keep their slot for the grace window.
+      if (player.sessionId && room.zombifyPlayer(player.id)) {
+        // Slot held — peers will see them disappear from snapshots until reconnect.
+        return;
+      }
       const id = player.id;
       room.removePlayer(id);
       broadcast({ t: "leave", id });

@@ -25,7 +25,21 @@ export class Room {
     this.roundIndex = 1;
   }
 
-  isFull() { return this.players.size >= CONFIG.MAX_PLAYERS; }
+  isFull() {
+    // Zombies (disconnected players awaiting reconnect) still count toward cap so
+    // their slot is preserved.
+    return this.players.size >= CONFIG.MAX_PLAYERS;
+  }
+
+  // Find a zombie player matching a session. Returns the player or null.
+  findZombieBySession(sessionId) {
+    if (!sessionId) return null;
+    const now = Date.now();
+    for (const p of this.players.values()) {
+      if (p.zombieUntilMs > now && p.sessionId === sessionId) return p;
+    }
+    return null;
+  }
 
   nextSpawn() {
     const s = this.spawns[this.spawnIdx % this.spawns.length];
@@ -43,12 +57,31 @@ export class Room {
 
   removePlayer(id) {
     this.players.delete(id);
-    // Clean stale references so other players' Maps don't grow unbounded.
     for (const p of this.players.values()) {
       p.lastHitAtMs.delete(id);
       p.parryUntilMs.delete(id);
     }
     this.ensureBots();
+  }
+
+  // Soft-disconnect: keep the slot for reconnectGraceMs. Returns true if zombified.
+  zombifyPlayer(id) {
+    const p = this.players.get(id);
+    if (!p || !p.sessionId) return false;
+    p.socket = null;
+    p.zombieUntilMs = Date.now() + CONFIG.PLAYER.reconnectGraceMs;
+    p.pendingInput = null;
+    return true;
+  }
+
+  // Hard-remove zombies that exceeded grace window.
+  reapZombies() {
+    const now = Date.now();
+    for (const p of [...this.players.values()]) {
+      if (p.zombieUntilMs > 0 && p.zombieUntilMs <= now) {
+        this.removePlayer(p.id);
+      }
+    }
   }
 
   addBot(difficulty = BOT_DIFFICULTY) {
@@ -95,6 +128,7 @@ export class Room {
     const now = Date.now();
     this.lastTickMs = now;
     this.tick++;
+    this.reapZombies();
 
     const dtMs = 1000 / CONFIG.TICK_HZ;
     // One sim step per player per tick, regardless of input rate.
@@ -229,6 +263,7 @@ export class Room {
   snapshot() {
     const players = [];
     for (const p of this.players.values()) {
+      if (p.zombieUntilMs > Date.now()) continue;            // skip disconnected awaiting rejoin
       const invulnLeft = Math.max(0, CONFIG.PLAYER.spawnInvulnMs - (Date.now() - p.spawnedAtMs));
       players.push({
         id: p.id,

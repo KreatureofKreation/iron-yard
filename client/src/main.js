@@ -196,7 +196,7 @@ net.on("welcome", (m) => {
   }
   for (const r of state.remotes.values()) scene.add(r.rig.root);
   HUD.setHp(state.local.hp, RUNTIME.player.hp);
-  HUD.log(`welcome to the yard — ${state.weaponKey}`);
+  HUD.log(m.resumed ? "reconnected to your slot" : `welcome to the yard — ${state.weaponKey}`);
   // Controls onboarding (first time only).
   if (!localStorage.getItem("ironyard.onboarded")) {
     const isTouch = matchMedia("(hover: none) and (pointer: coarse)").matches;
@@ -1118,7 +1118,14 @@ async function play() {
   HUD.setMenu(true, "connecting…");
   try {
     await net.connect(url);
-    const joinMsg = { t: "join", name, weapon: state.weaponKey };
+    // Persistent per-browser session id so the server can resume our slot if WS drops.
+    let sessionId = localStorage.getItem("ironyard.session");
+    if (!sessionId) {
+      sessionId = (crypto.randomUUID && crypto.randomUUID()) ||
+                  Math.random().toString(36).slice(2) + Date.now().toString(36);
+      localStorage.setItem("ironyard.session", sessionId);
+    }
+    const joinMsg = { t: "join", name, weapon: state.weaponKey, sessionId };
     net.rememberJoin(joinMsg);
     net.send(joinMsg);
     HUD.setMenu(false);
