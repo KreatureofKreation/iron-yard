@@ -10,6 +10,7 @@ const BOT_DIFFICULTY = (process.env.BOT_DIFFICULTY || "medium").toLowerCase();
 export class Room {
   constructor() {
     this.players = new Map();
+    this.spectators = new Set();    // sockets that joined when room was full
     this.tick = 0;
     this.lastTickMs = Date.now();
     this.spawns = spawnPoints();

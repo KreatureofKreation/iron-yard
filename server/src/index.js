@@ -65,6 +65,12 @@ const broadcast = (obj, exceptId = null) => {
       try { p.socket.send(msg); } catch {}
     }
   }
+  // Spectators also receive game-state messages.
+  for (const s of room.spectators) {
+    if (s.readyState === s.OPEN) {
+      try { s.send(msg); } catch {}
+    }
+  }
 };
 
 wss.on("connection", (sock) => {
@@ -77,8 +83,17 @@ wss.on("connection", (sock) => {
 
     if (msg.t === "join") {
       if (room.isFull()) {
-        send(sock, { t: "full", max: CONFIG.MAX_PLAYERS });
-        sock.close();
+        // No more player slots — accept as spectator.
+        room.spectators.add(sock);
+        sock._spectator = true;
+        send(sock, {
+          t: "welcome", id: 0, spectator: true,
+          config: {
+            tickHz: CONFIG.TICK_HZ, snapHz: CONFIG.SNAP_HZ,
+            player: CONFIG.PLAYER, weapons: CONFIG.WEAPONS, combat: CONFIG.COMBAT,
+          },
+          arena: room.arenaInfo(),
+        });
         return;
       }
       player = room.addPlayer(msg.name, sock, msg.weapon);
@@ -123,6 +138,8 @@ wss.on("connection", (sock) => {
       const id = player.id;
       room.removePlayer(id);
       broadcast({ t: "leave", id });
+    } else if (sock._spectator) {
+      room.spectators.delete(sock);
     }
   });
 });

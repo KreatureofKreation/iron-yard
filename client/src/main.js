@@ -168,14 +168,12 @@ net.on("welcome", (m) => {
   applyRuntime(m);
   state.serverConfigReceived = true;
   state.myId = m.id;
+  state.spectator = !!m.spectator;
   state.weaponKey = m.you?.weaponKey ?? state.weaponKey;
-  // Set initial camera so screen-up = toward arena center.
   if (m.you?.spawnPos) {
-    state.cameraYaw = Math.atan2(m.you.spawnPos.x, m.you.spawnPos.z); // points camera toward (0,0)
+    state.cameraYaw = Math.atan2(m.you.spawnPos.x, m.you.spawnPos.z);
   }
-  // Rebuild scene with arena info.
   scene = buildScene().scene;
-  // Spawn a few barrels at arena edges (after Rapier ready).
   clearArenaProps(scene);
   const propPositions = [
     { x: -10, y: 0, z: -10 }, { x:  10, y: 0, z: -10 },
@@ -183,10 +181,19 @@ net.on("welcome", (m) => {
     { x:   0, y: 0, z: -12 }, { x:   0, y: 0, z:  12 },
   ];
   spawnArenaProps(scene, propPositions);
-  // Build local rig with chosen weapon.
-  const pal = paletteFor(m.id);
-  state.rig = buildCharacter({ ...pal, isLocal: true, weaponKey: state.weaponKey });
-  scene.add(state.rig.root);
+  // Spectators have no local rig; camera will pick a target each frame.
+  if (!state.spectator) {
+    const pal = paletteFor(m.id);
+    state.rig = buildCharacter({ ...pal, isLocal: true, weaponKey: state.weaponKey });
+    scene.add(state.rig.root);
+    HUD.setHp(state.local.hp, RUNTIME.player.hp);
+  } else {
+    HUD.showBanner(`<div style="color:#9adfff;">SPECTATING</div>
+      <div style="font-size:.75rem; opacity:.7; margin-top:.3rem;">arena full · slot opens when someone leaves</div>`, 5000);
+    // Force the spectator camera path (reuses existing dead-player orbit logic).
+    state.local.alive = false;
+    state.local.pos.set(0, 0, 0);
+  }
   for (const r of state.remotes.values()) scene.add(r.rig.root);
   HUD.setHp(state.local.hp, RUNTIME.player.hp);
   HUD.log(`welcome to the yard — ${state.weaponKey}`);
@@ -477,8 +484,13 @@ net.on("leave", (m) => {
   const r = state.remotes.get(m.id);
   if (r) { scene.remove(r.rig.root); state.remotes.delete(m.id); }
 });
-net.on("full",  () => HUD.setMenu(true, "arena full — try later"));
-net.on("close", () => { window.IRONYARD_INGAME = false; HUD.setMenu(true, "disconnected"); });
+net.on("full",  () => { net.disconnect(); HUD.setMenu(true, "arena full — try later"); });
+net.on("close", () => {
+  window.IRONYARD_INGAME = false;
+  HUD.log("disconnected — reconnecting…");
+});
+net.on("open",   () => { /* fresh connect */ });
+net.on("reopen", () => { HUD.log("reconnected"); window.IRONYARD_INGAME = true; });
 net.on("chat",  (m) => HUD.log(`${m.name}: ${m.text}`));
 
 function nameFor(id) {
@@ -1012,6 +1024,41 @@ for (const b of wpnBtns) {
 const careerEl = document.getElementById("career");
 if (careerEl) careerEl.textContent = "career · " + statsHtml();
 
+// ---- In-game chat ----
+const chatInput = document.getElementById("chat-input");
+if (chatInput) {
+  window.addEventListener("keydown", (e) => {
+    if (!window.IRONYARD_INGAME) return;
+    // Open chat with T or /. Ignore if already focused on a slider/button.
+    const tag = (document.activeElement && document.activeElement.tagName) || "";
+    if (chatInput.style.display === "none" && (e.code === "KeyT" || e.code === "Slash") && tag !== "INPUT") {
+      // Release pointer-lock so the user can type.
+      document.exitPointerLock?.();
+      chatInput.style.display = "block";
+      chatInput.value = e.code === "Slash" ? "/" : "";
+      requestAnimationFrame(() => chatInput.focus());
+      e.preventDefault();
+    }
+  });
+  chatInput.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      const text = chatInput.value.trim();
+      if (text.length) net.send({ t: "chat", text });
+      chatInput.value = "";
+      chatInput.style.display = "none";
+      chatInput.blur();
+      e.preventDefault();
+    } else if (e.key === "Escape") {
+      chatInput.value = "";
+      chatInput.style.display = "none";
+      chatInput.blur();
+      e.preventDefault();
+    }
+    // Don't let movement keys bubble while typing.
+    e.stopPropagation();
+  });
+}
+
 // ---- Settings panel ----
 function loadSettings() {
   try { return JSON.parse(localStorage.getItem("ironyard.settings") || "{}"); }
@@ -1071,7 +1118,9 @@ async function play() {
   HUD.setMenu(true, "connecting…");
   try {
     await net.connect(url);
-    net.send({ t: "join", name, weapon: state.weaponKey });
+    const joinMsg = { t: "join", name, weapon: state.weaponKey };
+    net.rememberJoin(joinMsg);
+    net.send(joinMsg);
     HUD.setMenu(false);
     window.IRONYARD_INGAME = true;
     requestAnimationFrame(frame);
