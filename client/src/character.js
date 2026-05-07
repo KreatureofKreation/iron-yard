@@ -51,24 +51,48 @@ export function buildCharacter({ color = 0x9aa0a8, accent = 0xc8a97e, isLocal = 
   armL.add(armLMesh);
   root.add(armL);
 
-  // Right shoulder = weapon rig.
+  // Right arm: shoulder pivot → upper-arm → elbow pivot → forearm → hand → sword.
+  // We orient the SHOULDER (weaponRig) toward the world-space tip (poseRig handles that)
+  // and the elbow bends procedurally based on chain length so the limb looks alive.
   const weaponRig = new THREE.Group();
   weaponRig.name = "weaponRig";
   weaponRig.position.set(radius * 0.85, armPivotY, 0);
   root.add(weaponRig);
 
-  const armR = new THREE.Mesh(armGeo, armorMat);
-  armR.position.set(0, -height * 0.18, 0);
-  armR.castShadow = true;
-  weaponRig.add(armR);
+  // Upper arm — shorter than before; positioned to extend down from the shoulder.
+  const upperArmLen = height * 0.20;
+  const upperArmGeo = new THREE.CylinderGeometry(radius * 0.22, radius * 0.20, upperArmLen, 10);
+  const upperArm = new THREE.Mesh(upperArmGeo, armorMat);
+  upperArm.position.set(0, -upperArmLen / 2, 0);
+  upperArm.castShadow = true;
+  weaponRig.add(upperArm);
 
+  // Elbow pivot at end of upper arm. Forearm extends from here.
+  const elbow = new THREE.Group();
+  elbow.position.set(0, -upperArmLen, 0);
+  weaponRig.add(elbow);
+
+  const forearmLen = height * 0.22;
+  const forearmGeo = new THREE.CylinderGeometry(radius * 0.20, radius * 0.18, forearmLen, 10);
+  const forearm = new THREE.Mesh(forearmGeo, armorMat);
+  forearm.position.set(0, -forearmLen / 2, 0);
+  forearm.castShadow = true;
+  elbow.add(forearm);
+
+  // Hand at the end of the forearm.
   const hand = new THREE.Mesh(new THREE.BoxGeometry(radius * 0.32, radius * 0.22, radius * 0.32), skinMat);
-  hand.position.set(0, -height * 0.38, 0);
-  weaponRig.add(hand);
+  hand.position.set(0, -forearmLen, 0);
+  elbow.add(hand);
 
-  // Weapon — visual scaled to match weaponKey length and shape.
+  // Static elbow bend so the arm doesn't render as a perfectly straight pole.
+  // Rotation around X gives a forward bend (elbow folds the forearm forward).
+  elbow.rotation.x = 0.35;
+
+  // Weapon — visual scaled to match weaponKey length and shape. Parented to weaponRig
+  // (not the elbow) so the existing poseRig orientation still works; the elbow bend is
+  // purely for the forearm cylinder's appearance.
   const sword = buildWeaponMesh(weaponKey);
-  sword.position.copy(hand.position);
+  sword.position.set(0, -(upperArmLen + forearmLen), 0);
   sword.rotation.x = -Math.PI / 2;
   weaponRig.add(sword);
 
@@ -199,7 +223,7 @@ export function buildCharacter({ color = 0x9aa0a8, accent = 0xc8a97e, isLocal = 
       const pulse = active ? (0.4 + 0.4 * Math.abs(Math.sin(t * 10))) : 1.0;
       const transparent = active;
       // Note: armL/legL/legR are Groups (pivots) — pass their child Meshes instead.
-      for (const m of [torso, head, helm, hips, cloak, armLMesh, armR, legLMesh, legRMesh, hand]) {
+      for (const m of [torso, head, helm, hips, cloak, armLMesh, upperArm, forearm, legLMesh, legRMesh, hand]) {
         if (!m || !m.material) continue;
         m.material.transparent = transparent;
         m.material.opacity = pulse;

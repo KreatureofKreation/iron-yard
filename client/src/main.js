@@ -114,28 +114,54 @@ function shoulderWorld(pos, yaw, out = new THREE.Vector3()) {
   return out.set(pos.x + sx, pos.y + 1.4, pos.z + sz);
 }
 
-// Compute weapon tip world position from aim vector and player facing.
-// Aim vector in -1..1; tip extends from shoulder along forward + lateral + vertical.
+// Compute weapon tip world position from aim vector + player facing.
+// Stance interpolation:
+//   aim mag < 0.18 → REST: sword down at side, tip near hip
+//   aim.y < -0.4   → LOW guard: tip below waist, forward
+//   aim.y mid      → MID guard: tip forward at chest height
+//   aim.y >  0.4   → HIGH guard: tip raised above shoulder
+//   aim.x          → lateral angle around the body
 function computeWeaponTip(aim, pos, yaw, length, out = new THREE.Vector3()) {
-  // Player forward (XZ): (-sin(yaw), 0, -cos(yaw)). Right: (cos(yaw), 0, -sin(yaw)).
-  const fx = -Math.sin(yaw), fz = -Math.cos(yaw);
-  const rx =  Math.cos(yaw), rz = -Math.sin(yaw);
-
-  // Build tip-offset direction in world.
+  const fx = -Math.sin(yaw), fz = -Math.cos(yaw);     // forward in world XZ
+  const rx =  Math.cos(yaw), rz = -Math.sin(yaw);     // right in world XZ
   const lat = Math.max(-1, Math.min(1, aim.x));
   const ver = Math.max(-1, Math.min(1, aim.y));
-  // Forward component: full when neutral, reduces as we swing wide.
-  const fwd = Math.max(0.25, 1 - Math.min(1, Math.hypot(lat, ver) * 0.6));
-
-  let dx = rx * lat + fx * fwd;
-  let dy = ver * 0.85 + 0.18;          // bias up slightly
-  let dz = rz * lat + fz * fwd;
-  // Normalize for unit direction.
-  const m = Math.hypot(dx, dy, dz) || 1;
-  dx /= m; dy /= m; dz /= m;
+  const aimMag = Math.hypot(lat, ver);
 
   shoulderWorld(pos, yaw, tmpV);
-  out.set(tmpV.x + dx * length, tmpV.y + dy * length, tmpV.z + dz * length);
+
+  // ---- Rest pose: tip beside the hip, angled slightly down + forward ----
+  // Computed in world: hip-side anchor + small forward extension.
+  const rest = {
+    x: tmpV.x + rx * 0.20 + fx * 0.45,                // 0.2m to right shoulder side, 0.45m forward
+    y: pos.y + 0.55,                                   // hip height
+    z: tmpV.z + rz * 0.20 + fz * 0.45,
+  };
+
+  // ---- Active stance: extend sword in aim direction with stance verticality ----
+  // Vertical component shaped: low if ver<0, high if ver>0.
+  const verBias = ver * 0.85;                          // -0.85..+0.85 from shoulder
+  const fwd = Math.max(0.20, 1 - Math.min(1, aimMag * 0.55));
+
+  let dx = rx * lat + fx * fwd;
+  let dy = verBias + 0.18;                             // small upward bias for visibility
+  let dz = rz * lat + fz * fwd;
+  const m = Math.hypot(dx, dy, dz) || 1;
+  dx /= m; dy /= m; dz /= m;
+  const active = {
+    x: tmpV.x + dx * length,
+    y: tmpV.y + dy * length,
+    z: tmpV.z + dz * length,
+  };
+
+  // Blend rest → active based on aim magnitude. Smoothstep for gentle transition.
+  const t = Math.max(0, Math.min(1, (aimMag - 0.10) / 0.45));
+  const s = t * t * (3 - 2 * t);                       // smoothstep
+  out.set(
+    rest.x + (active.x - rest.x) * s,
+    rest.y + (active.y - rest.y) * s,
+    rest.z + (active.z - rest.z) * s,
+  );
   return out;
 }
 
