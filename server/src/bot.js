@@ -101,17 +101,24 @@ export function botInput(bot, players, nowMs) {
 
   // Status-aware tweaks: target is helpless if stunned → press the attack hard.
   // If bot is bleeding heavily (hp+bleed-rate suggests it'll die soon), back off.
+  // If bot is disarmed/stunned itself, sprint AWAY from target.
   const now = nowMs;
   const targetStunned = (target.stunUntilMs || 0) > now;
+  const targetDisarmed = (target.disarmedUntilMs || 0) > now;
   const botBleedingBad = bot.bleedDmgPerSec > 6 && bot.hp < 60 && (bot.bleedUntilMs || 0) > now + 1000;
+  const botHelpless = (bot.disarmedUntilMs || 0) > now || (bot.stunUntilMs || 0) > now;
 
   // Movement decision.
   let mv = { x: 0, y: 0 };
-  if (botBleedingBad) {
+  if (botHelpless) {
+    // Disarmed or stunned — full retreat (sprint away).
+    mv.y = -1;
+    mv.x = Math.sin(now / 250 + bot.id) * 0.4;
+  } else if (botBleedingBad) {
     // Retreat — try to stay out of reach to let bleed expire.
     mv.y = -1;
     mv.x = Math.sin(now / 350 + bot.id) * 0.6;
-  } else if (targetStunned) {
+  } else if (targetStunned || targetDisarmed) {
     // Press the attack — close in even if "in range" already, no strafe.
     mv.y = dist > engage * 0.7 ? 1 : 0.5;
   } else if (threat) {
@@ -185,7 +192,7 @@ export function botInput(bot, players, nowMs) {
     mv,
     yaw,
     pitch: 0,
-    sprint: dist > engage * 1.8 && bot.hp > 50,
+    sprint: botHelpless || (dist > engage * 1.8 && bot.hp > 50),
     jump,
     blocking,
     swinging: true,

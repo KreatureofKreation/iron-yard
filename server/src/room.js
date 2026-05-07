@@ -185,13 +185,26 @@ export class Room {
     }
 
     // 2) Sync each player's kinematic body capsule to their current pos, drive sword,
-    //    then step the world. Stunned players DROP their sword (gravity on, no drive).
+    //    then step the world. Stunned/disarmed players DROP their sword (gravity on,
+    //    no drive). Disarmed players who walk over their own sword pick it up early.
     for (const p of this.players.values()) {
       if (p.zombieUntilMs > now) continue;
       this.physics.setBodyPos(p.id, p.pos);
       const stunned  = now < p.stunUntilMs;
-      const disarmed = now < p.disarmedUntilMs;
       const dead     = !p.alive;
+      let disarmed   = now < p.disarmedUntilMs;
+      // Early pickup: while disarmed and within 1m of sword, restore.
+      if (disarmed && !stunned && !dead) {
+        const sw = this.physics.swordState(p.id);
+        if (sw) {
+          const dx = sw.pos.x - p.pos.x, dz = sw.pos.z - p.pos.z;
+          if (dx * dx + dz * dz < 1.0) {
+            p.disarmedUntilMs = 0;
+            disarmed = false;
+            this.pendingHits.push({ kind: "pickup", id: p.id, weapon: p.weaponKey, at: { x: sw.pos.x, y: 0, z: sw.pos.z } });
+          }
+        }
+      }
       if (stunned || dead || disarmed) {
         this.physics.setSwordGravity(p.id, true);
       } else {
