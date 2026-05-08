@@ -299,6 +299,7 @@ net.on("snap", (m) => {
     r.crippleMsLeft = p.crippleMsLeft || 0;
     r.stunMsLeft = p.stunMsLeft || 0;
     r.bleedMsLeft = p.bleedMsLeft || 0;
+    r.disarmedMsLeft = p.disarmedMsLeft || 0;
     r.stamina = p.stamina ?? 100;
     r.torsoRot = p.torsoRot || null;
     r.headRot  = p.headRot  || null;
@@ -960,7 +961,14 @@ function updateNameplates() {
     div.style.left = sx + "px";
     div.style.top = sy + "px";
     div.style.display = "block";
-    div.querySelector(".name").textContent = r.name + " · " + (r.weaponKey || "");
+    // Append small status icons after weapon name.
+    const status = [];
+    if ((r.stunMsLeft || 0) > 0)     status.push("STUN");
+    if ((r.disarmedMsLeft || 0) > 0) status.push("DISARM");
+    if ((r.bleedMsLeft || 0) > 0)    status.push("BLEED");
+    if ((r.crippleMsLeft || 0) > 0)  status.push("LEG");
+    const sx = status.length ? ` <span style="color:#ff8050;">${status.join(" ")}</span>` : "";
+    div.querySelector(".name").innerHTML = `${escapeHtml(r.name)} · ${escapeHtml(r.weaponKey || "")}${sx}`;
     div.querySelector(".hp-mini-fill").style.width = Math.max(0, Math.min(100, (r.hp / (RUNTIME.player.hp || 100)) * 100)).toFixed(1) + "%";
     const staMax = (RUNTIME.player.stamina || 100);
     const sta = Math.max(0, Math.min(100, ((r.stamina ?? staMax) / staMax) * 100));
