@@ -358,25 +358,49 @@ export function buildCharacter({ color = 0x9aa0a8, accent = 0xc8a97e, isLocal = 
 
         // Left arm posing.
         if (grip === "two-hand") {
-          // Two-hand grip — left hand actually reaches across to grip the sword shaft.
-          // Compute world position of the sword grip (= right hand) and IK the left
-          // arm + elbow to put the left hand there. Without this, two-hand weapons
-          // visually only had the right hand on the hilt — left arm just dangled.
+          // Two-hand grip — body must visibly twist so the left hand reaches the sword.
+          // Steps:
+          //   1) Slide the left shoulder forward + toward the sword's side (a body-twist
+          //      cheat — much cheaper than re-rigging the chest).
+          //   2) Compute the world position of the sword grip (~10cm below right hand).
+          //   3) IK the left arm + elbow so its -Y points at the grip; bend the elbow
+          //      based on remaining distance.
+          //   4) Stretch the forearm cylinder if reach still falls short, so the visible
+          //      arm always connects shoulder → hand → sword.
+          // Step 1 — shift shoulder. Default is (-radius*0.95, Y_SHOULDER, 0). Push
+          // it forward + right so the arm can plausibly cross the chest.
+          armL.position.set(-radius * 0.45, Y_SHOULDER - height * 0.04, radius * 0.35);
+
+          // Step 2 — sword grip world.
           const gripLocal = _twoHandGripTmp.set(0, -(UPPER_ARM_LEN + FOREARM_LEN), 0);
           weaponRig.localToWorld(gripLocal);
           root.worldToLocal(gripLocal);
-          // Slight offset so the LEFT hand sits below + slightly cross-body of the right hand.
-          gripLocal.y -= 0.04;
+          // Sit left hand slightly below + closer to body than right hand.
+          gripLocal.y -= 0.05;
+          gripLocal.x -= 0.05;
+
+          // Step 3 — aim.
           const targetVec = _twoHandTargetTmp.copy(gripLocal).sub(armL.position);
           const dist = targetVec.length();
           if (dist > 0.001) {
-            armL.quaternion.setFromUnitVectors(_downAxis, targetVec.normalize());
+            armL.quaternion.setFromUnitVectors(_downAxis, targetVec.clone().normalize());
           }
           const reach = UPPER_ARM_LEN + FOREARM_LEN;
           const ratio = Math.min(1, dist / Math.max(0.01, reach));
           const bend = Math.acos(ratio);
-          elbowL.rotation.x = 0.20 + bend * 0.55;
+          elbowL.rotation.x = 0.10 + bend * 0.55;
+
+          // Step 4 — stretch forearm if hand still doesn't reach (rare).
+          // Positive when target is beyond reach. Scale forearm + reposition hand.
+          const stretch = Math.max(1.0, dist / Math.max(0.01, reach));
+          forearmLMesh.scale.y = stretch;
+          forearmLMesh.position.y = -FOREARM_LEN * stretch / 2;
+          handLMesh.position.y   = -FOREARM_LEN * stretch - radius * 0.05;
         } else if (grip === "shield") {
+          armL.position.set(-radius * 0.95, Y_SHOULDER, 0);
+          forearmLMesh.scale.y = 1;
+          forearmLMesh.position.y = -FOREARM_LEN / 2;
+          handLMesh.position.y   = -FOREARM_LEN - radius * 0.05;
           // Iron-Thorn middle-guard default: shield extended forward at mid-torso
           // height, "decent gap from the body". Elbow tucked so face is covered.
           armL.rotation.x = -0.55;
