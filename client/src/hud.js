@@ -7,6 +7,8 @@ export const HUD = {
     const pct = Math.max(0, Math.min(1, cur / max));
     f.style.width = (pct * 100).toFixed(1) + "%";
     if (n) n.textContent = String(Math.round(cur));
+    // Critical pulse when HP < 25.
+    f.classList.toggle("critical", cur > 0 && cur < 25);
   },
   setStamina(cur, max = 100) {
     const f = document.getElementById("sta-fill");
