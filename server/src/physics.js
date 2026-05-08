@@ -29,8 +29,11 @@ export async function initRapier() {
 export function isRapierReady() { return initialized; }
 
 export class PhysicsWorld {
-  constructor() {
+  constructor(tickHz = 30) {
     this.world = new RAPIER.World({ x: 0, y: -18, z: 0 });
+    // Rapier defaults to 1/60s — at 30Hz tick that half-steps physics, making
+    // gravity / spring forces effectively half-strength. Match world dt to tick rate.
+    this.world.timestep = 1 / tickHz;
     this.eventQueue = new RAPIER.EventQueue(true);
     this.swords = new Map();         // playerId -> { body, collider, weaponMass, length }
     this.bodies = new Map();         // playerId -> { body, collider }
@@ -39,8 +42,10 @@ export class PhysicsWorld {
     this.props  = [];                // dynamic arena props (barrels): { body }
     this.colliderToPlayerSword = new Map();  // colliderHandle -> playerId (attacker)
     this.colliderToPlayerBody  = new Map();  // colliderHandle -> playerId (victim)
+    this.wallColliders = new Set();          // colliderHandle of static walls/pillars
     // Per-tick contact register: attackerId -> { victimId -> impactSpeed }
     this._contacts = new Map();
+    this._wallClashes = [];                   // { id, speed, pos } per sword-vs-wall hit
   }
 
   attachBody(playerId, pos) {
@@ -229,8 +234,9 @@ export class PhysicsWorld {
     // k = stiffness, d = damping. Inverse-mass on stiffness so heavier feels heavier.
     // Damping low enough that the tip overshoots toward fast target motion (swing feel).
     // Lower stiffness + higher damping → heavy, deliberate swings (not twiggy).
-    const k = 380 / wMass;
-    const d = 14;
+    // Tuned for world.timestep = 1/30 (full server-tick rate).
+    const k = 260 / wMass;
+    const d = 16;
     const ax = (target.x - t.x) * k - v.x * d;
     const ay = (target.y - t.y) * k - v.y * d;
     const az = (target.z - t.z) * k - v.z * d;
@@ -278,6 +284,9 @@ export class PhysicsWorld {
         // Sword-vs-sword clash. Impulse exchange handled by Rapier; we still surface event.
         this._stampClash(sw1, sw2);
       }
+      // Sword-vs-wall/pillar — emit clash for SFX (no damage).
+      if (sw1 != null && this.wallColliders.has(h2)) this._stampWallClash(sw1);
+      if (sw2 != null && this.wallColliders.has(h1)) this._stampWallClash(sw2);
     });
   }
 
@@ -290,6 +299,15 @@ export class PhysicsWorld {
     if (!m) { m = new Map(); this._contacts.set(attackerId, m); }
     const prev = m.get(victimId) || 0;
     if (speed > prev) m.set(victimId, speed);
+  }
+  _stampWallClash(swordPid) {
+    const sw = this.swords.get(swordPid);
+    if (!sw) return;
+    const v = sw.body.linvel();
+    const speed = Math.hypot(v.x, v.y, v.z);
+    if (speed < 4) return;        // ignore gentle bumps
+    const t = sw.body.translation();
+    this._wallClashes.push({ id: swordPid, speed, pos: { x: t.x, y: t.y, z: t.z } });
   }
   _stampClash(a, b) {
     const sa = this.swords.get(a), sb = this.swords.get(b);
@@ -329,6 +347,48 @@ export class PhysicsWorld {
     const sw = this.swords.get(playerId);
     if (!sw) return;
     sw.body.setGravityScale(on ? 1 : 0, true);
+  }
+
+  // Static colliders for walls + pillars so swords clack against them.
+  // walls: [{ x, z, sx, sz }] center + half extents in XZ. wallH = full height.
+  // pillars: [{ x, z, hx, hz }] center + half extents.
+  spawnArenaStatics({ size, wallH, pillars }) {
+    const halfS = size / 2;
+    const wallThick = 0.5;
+    const wallSpecs = [
+      { x: 0, z: -halfS, sx: size + wallThick * 2, sz: wallThick },
+      { x: 0, z:  halfS, sx: size + wallThick * 2, sz: wallThick },
+      { x: -halfS, z: 0, sx: wallThick, sz: size },
+      { x:  halfS, z: 0, sx: wallThick, sz: size },
+    ];
+    const fixedDesc = RAPIER.RigidBodyDesc.fixed();
+    for (const w of wallSpecs) {
+      const body = this.world.createRigidBody(fixedDesc);
+      const cd = RAPIER.ColliderDesc.cuboid(w.sx / 2, wallH / 2, w.sz / 2)
+        .setTranslation(w.x, wallH / 2, w.z)
+        .setRestitution(0.15).setFriction(0.6)
+        // Walls participate in BODY group so swords (filter BODY|SWORD) collide.
+        .setCollisionGroups((0x0001 << 16) | (0x0001 | 0x0002))
+        .setActiveEvents(RAPIER.ActiveEvents.COLLISION_EVENTS);
+      const col = this.world.createCollider(cd, body);
+      this.wallColliders.add(col.handle);
+    }
+    for (const p of pillars || []) {
+      const body = this.world.createRigidBody(fixedDesc);
+      const cd = RAPIER.ColliderDesc.cuboid(p.hx, wallH * 0.45, p.hz)
+        .setTranslation(p.x, wallH * 0.45, p.z)
+        .setRestitution(0.15).setFriction(0.6)
+        .setCollisionGroups((0x0001 << 16) | (0x0001 | 0x0002))
+        .setActiveEvents(RAPIER.ActiveEvents.COLLISION_EVENTS);
+      const col = this.world.createCollider(cd, body);
+      this.wallColliders.add(col.handle);
+    }
+  }
+
+  drainWallClashes() {
+    const out = this._wallClashes;
+    this._wallClashes = [];
+    return out;
   }
 
   spawnArenaProps(positions) {

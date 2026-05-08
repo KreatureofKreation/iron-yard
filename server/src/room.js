@@ -12,7 +12,12 @@ export class Room {
   constructor() {
     this.players = new Map();
     this.spectators = new Set();
-    this.physics = new PhysicsWorld();
+    this.physics = new PhysicsWorld(CONFIG.TICK_HZ);
+    this.physics.spawnArenaStatics({
+      size: CONFIG.ARENA.size,
+      wallH: CONFIG.ARENA.wallH,
+      pillars: obstacles(),
+    });
     this.physics.spawnArenaProps([
       { x: -10, y: 0, z: -10 }, { x:  10, y: 0, z: -10 },
       { x: -10, y: 0, z:  10 }, { x:  10, y: 0, z:  10 },
@@ -204,7 +209,8 @@ export class Room {
       let disarmed   = now < p.disarmedUntilMs;
       const knocked  = now < p.knockedDownUntilMs;
       // Early pickup: while disarmed and within 1m of sword, restore.
-      if (disarmed && !stunned && !dead) {
+      // Severed-arm players cannot rearm — their sword stays on the ground for the round.
+      if (disarmed && !stunned && !dead && !p.severedArm) {
         const sw = this.physics.swordState(p.id);
         if (sw) {
           const dx = sw.pos.x - p.pos.x, dz = sw.pos.z - p.pos.z;
@@ -302,6 +308,7 @@ export class Room {
         if (!p.alive) continue;
       }
       if (now < p.stunUntilMs || now < p.disarmedUntilMs) continue;
+      if (p.severedArm) continue;
       if ((p.lastPickupAtMs || 0) > now - 1000) continue;
       for (const q of this.players.values()) {
         if (q === p) continue;
@@ -329,6 +336,7 @@ export class Room {
         if (!p.alive) continue;
       }
       if ((p.lastPickupAtMs || 0) > now - 1000) continue;
+      if (p.severedArm) continue;
       for (const rk of racks) {
         const dx = p.pos.x - rk.x, dz = p.pos.z - rk.z;
         if (dx * dx + dz * dz < 1.0 && p.weaponKey !== rk.weapon) {
@@ -337,6 +345,52 @@ export class Room {
           const w = weaponOf(p);
           this.physics.swapWeapon(p.id, w.mass, w.length);
           this.pendingHits.push({ kind: "pickup", id: p.id, weapon: rk.weapon, at: { x: rk.x, y: 0, z: rk.z } });
+          break;
+        }
+      }
+    }
+
+    // Body slam — sprinting players who collide with another player drive them back.
+    // Cooldown per attacker. Knocks down the victim only on a heavy hit (very high speed).
+    if (this.matchPhase === "playing") {
+      const arr = [...this.players.values()];
+      const radius2 = (CONFIG.PLAYER.radius * 2) * 1.05;
+      for (let i = 0; i < arr.length; i++) {
+        const p = arr[i];
+        if (!p.alive) continue;
+        if (now - (p.lastSlamAtMs || 0) < 700) continue;
+        const pSp = Math.hypot(p.vel.x, p.vel.z);
+        // Need real momentum — sprint speed minimum.
+        if (pSp < 5.5) continue;
+        for (let j = 0; j < arr.length; j++) {
+          if (i === j) continue;
+          const q = arr[j];
+          if (!q.alive) continue;
+          if (now - q.spawnedAtMs < CONFIG.PLAYER.spawnInvulnMs) continue;
+          if (now - p.spawnedAtMs < CONFIG.PLAYER.spawnInvulnMs) continue;
+          const dx = q.pos.x - p.pos.x, dz = q.pos.z - p.pos.z;
+          const d2 = dx * dx + dz * dz;
+          if (d2 > radius2 * radius2) continue;
+          // Hit. Direction = attacker's forward into victim.
+          const dl = Math.sqrt(d2) || 1;
+          const ux = dx / dl, uz = dz / dl;
+          const slamMag = 4 + pSp * 0.9;
+          q.impulse.x += ux * slamMag;
+          q.impulse.z += uz * slamMag;
+          q.stamina = Math.max(0, q.stamina - 18);
+          if (this.physics) this.physics.pushTorso(q.id, { x: ux * 7, y: 1.5, z: uz * 7 });
+          // Hard slam (very fast attacker) → brief knockdown on victim.
+          if (pSp > 7.0) {
+            q.knockedDownUntilMs = Math.max(q.knockedDownUntilMs, now + 900);
+          }
+          // Attacker bounces off slightly + loses stamina.
+          p.vel.x *= 0.4; p.vel.z *= 0.4;
+          p.stamina = Math.max(0, p.stamina - 10);
+          p.lastSlamAtMs = now;
+          this.pendingHits.push({
+            kind: "slam", from: p.id, to: q.id, speed: pSp,
+            at: { x: q.pos.x, y: q.pos.y + 0.9, z: q.pos.z },
+          });
           break;
         }
       }
@@ -351,6 +405,11 @@ export class Room {
         this.pendingHits.push({ kind: "matchStart", round: this.roundIndex, roundEndsAt: this.roundEndsAt });
       }
     } else if (this.matchPhase === "playing") {
+      // Sword-vs-wall clacks (no damage; just SFX).
+      const wallClashes = this.physics.drainWallClashes();
+      for (const wc of wallClashes) {
+        this.pendingHits.push({ kind: "wallClash", id: wc.id, speed: wc.speed, at: wc.pos });
+      }
       const hits = resolveHits(this.players, now, this.physics);
       if (hits.length) {
         this.pendingHits.push(...hits);
@@ -432,6 +491,7 @@ export class Room {
         stamina: p.stamina,
         helmIntact: p.helmIntact,
         severedLeg: !!p.severedLeg,
+        severedArm: !!p.severedArm,
         crippleMsLeft: Math.max(0, p.crippledUntilMs - Date.now()),
         stunMsLeft:    Math.max(0, p.stunUntilMs    - Date.now()),
         bleedMsLeft:   Math.max(0, p.bleedUntilMs   - Date.now()),

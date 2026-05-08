@@ -7,7 +7,8 @@ import { buildCharacter, WEAPON_LIST } from "./character.js";
 import { HUD } from "./hud.js";
 import * as SFX from "./audio.js";
 import { initRapier, rapierStep, createRagdoll, tickRagdolls, clearAllRagdolls,
-         spawnArenaProps, applyKickToProps, syncProps, clearArenaProps } from "./ragdoll.js";
+         spawnArenaProps, applyKickToProps, syncProps, clearArenaProps,
+         spawnFallingHelm } from "./ragdoll.js";
 
 // ---------- Renderer / scene ----------
 const renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -209,7 +210,6 @@ net.on("welcome", (m) => {
   serverPropMeshes.length = 0;
   for (const halo of swordHaloMap.values()) { try { scene.remove(halo); } catch {} }
   swordHaloMap.clear();
-  fallingProps.length = 0;
   clearAllRagdolls();
   scene = buildScene().scene;
   // Server-authoritative props: visual meshes built lazily as they appear in snap.
@@ -265,7 +265,9 @@ net.on("snap", (m) => {
       state.local.invulnMs = p.invulnMs || 0;
       state.local.crippleMsLeft = p.crippleMsLeft || 0;
       state.local.severedLeg = !!p.severedLeg;
+      state.local.severedArm = !!p.severedArm;
       if (state.rig?.setSeveredLeg) state.rig.setSeveredLeg(state.local.severedLeg);
+      if (state.rig?.setSeveredArm) state.rig.setSeveredArm(state.local.severedArm);
       state.local.stunMsLeft = p.stunMsLeft || 0;
       state.local.bleedMsLeft = p.bleedMsLeft || 0;
       state.local.torsoRot = p.torsoRot || null;
@@ -310,7 +312,9 @@ net.on("snap", (m) => {
     r.invulnMs = p.invulnMs || 0;
     r.crippleMsLeft = p.crippleMsLeft || 0;
     r.severedLeg = !!p.severedLeg;
+    r.severedArm = !!p.severedArm;
     if (r.rig?.setSeveredLeg) r.rig.setSeveredLeg(r.severedLeg);
+    if (r.rig?.setSeveredArm) r.rig.setSeveredArm(r.severedArm);
     r.stunMsLeft = p.stunMsLeft || 0;
     r.bleedMsLeft = p.bleedMsLeft || 0;
     r.disarmedMsLeft = p.disarmedMsLeft || 0;
@@ -462,7 +466,8 @@ net.on("sever", (m) => {
     state.shake.mag = Math.max(state.shake.mag, 0.55);
     HUD.flash(0.5);
   }
-  HUD.killFeed(`✂ ${nameFor(m.id)} loses a leg`);
+  const limbWord = m.limb === "arm" ? "an arm" : "a leg";
+  HUD.killFeed(`✂ ${nameFor(m.id)} loses ${limbWord}`);
 });
 
 net.on("knockdown", (m) => {
@@ -490,6 +495,31 @@ net.on("clash", (m) => {
   spark(scene, m.at, 0.35, 0xfff0a0);
   if (m.a === state.myId || m.b === state.myId) {
     state.shake.mag = Math.max(state.shake.mag, 0.18);
+    state.shake.t = 0;
+  }
+});
+
+net.on("slam", (m) => {
+  // Body slam: sprinting attacker drove victim back (and possibly knocked down).
+  const pan = computePan(m.at);
+  SFX.thud(pan);
+  spark(scene, m.at, 0.32, 0xc8a070);
+  if (m.to === state.myId) {
+    state.shake.mag = Math.max(state.shake.mag, 0.32);
+    state.shake.t = 0;
+    HUD.flash(0.18);
+  } else if (m.from === state.myId) {
+    state.shake.mag = Math.max(state.shake.mag, 0.10);
+  }
+  HUD.killFeed(`⤳ ${nameFor(m.from)} body-slammed ${nameFor(m.to)}`);
+});
+
+net.on("wallClash", (m) => {
+  // Sword-vs-wall/pillar clack. Quieter than parry, no shake.
+  SFX.clash(computePan(m.at), Math.min(0.7, 0.3 + m.speed / 30));
+  spark(scene, m.at, 0.18, 0xc8a97e);
+  if (m.id === state.myId) {
+    state.shake.mag = Math.max(state.shake.mag, 0.06);
     state.shake.t = 0;
   }
 });
@@ -943,7 +973,8 @@ function updateDroppedSwordHalos() {
   for (const [id, r] of state.remotes) {
     const dropped = !r.alive
       || (r.stunMsLeft || 0) > 0
-      || (r.disarmedMsLeft || 0) > 0;
+      || (r.disarmedMsLeft || 0) > 0
+      || r.severedArm;
     if (!dropped || !r._lastTip) continue;
     seen.add(id);
     let halo = swordHaloMap.get(id);
@@ -1052,58 +1083,39 @@ function computePan(at) {
   return Math.max(-1, Math.min(1, tmpPan.x));
 }
 
-// Detach helmet visual from a victim. Spawn a temporary mesh that falls.
-const fallingProps = [];
+// Detach helmet visual from a victim. The helm becomes a Rapier dynamic body and
+// physically tumbles + rolls. Original helm on the rig is hidden until respawn.
 function detachHelmet(victimId, at) {
   let rig = victimId === state.myId ? state.rig : state.remotes.get(victimId)?.rig;
   if (!rig) return;
   const helm = rig.parts?.helm;
   if (!helm || !helm.parent) return;
-  // Convert helm world transform.
   const wp = new THREE.Vector3();
   helm.getWorldPosition(wp);
-  // Detach: new mesh in scene with same geometry/material, simple physics velocity.
-  const m = new THREE.Mesh(helm.geometry, helm.material.clone());
+  const wq = new THREE.Quaternion();
+  helm.getWorldQuaternion(wq);
+  const m = helm.clone(true);
   m.position.copy(wp);
-  scene.add(m);
-  // Hide original on the rig so it looks like the helm flew off.
+  m.quaternion.copy(wq);
+  m.scale.copy(helm.scale);
   helm.visible = false;
-  fallingProps.push({
-    mesh: m, vel: new THREE.Vector3(
-      (Math.random() - 0.5) * 3,
-      4 + Math.random() * 2,
-      (Math.random() - 0.5) * 3,
-    ),
-    angVel: new THREE.Vector3(Math.random()*6-3, Math.random()*6-3, Math.random()*6-3),
-    life: 0,
-    maxLife: 8,
-    rig,                         // restore helm.visible when prop dies (on respawn)
+  // Direction: from rig center toward hit point (or random if no hit point).
+  let dir = { x: (Math.random() - 0.5) * 2, z: (Math.random() - 0.5) * 2 };
+  if (at) {
+    const dx = at.x - wp.x;
+    const dz = at.z - wp.z;
+    const dl = Math.hypot(dx, dz) || 1;
+    dir = { x: dx / dl, z: dz / dl };
+  }
+  spawnFallingHelm(scene, m, wp, dir, () => {
+    // On expire: restore the live rig's helm visibility (in case the player respawned).
+    if (rig.parts?.helm) rig.parts.helm.visible = true;
   });
 }
 function tickFallingProps(dt) {
-  for (let i = fallingProps.length - 1; i >= 0; i--) {
-    const p = fallingProps[i];
-    p.life += dt;
-    p.mesh.position.x += p.vel.x * dt;
-    p.mesh.position.y += p.vel.y * dt;
-    p.mesh.position.z += p.vel.z * dt;
-    p.vel.y += -18 * dt;
-    if (p.mesh.position.y < 0.05) {
-      p.mesh.position.y = 0.05;
-      p.vel.y = 0; p.vel.x *= 0.5; p.vel.z *= 0.5;
-      p.angVel.multiplyScalar(0.6);
-    }
-    p.mesh.rotation.x += p.angVel.x * dt;
-    p.mesh.rotation.y += p.angVel.y * dt;
-    p.mesh.rotation.z += p.angVel.z * dt;
-    if (p.life >= p.maxLife) {
-      // Restore helm visibility on the rig (in case rig still alive — respawned).
-      const helm = p.rig?.parts?.helm;
-      if (helm) helm.visible = true;
-      scene.remove(p.mesh);
-      fallingProps.splice(i, 1);
-    }
-  }
+  // Helm physics is now driven by Rapier (see ragdoll.js tickRagdolls). Kept as a
+  // no-op so the existing call site in frame() doesn't change.
+  void dt;
 }
 
 // Hit spark.

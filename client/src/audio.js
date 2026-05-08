@@ -107,7 +107,7 @@ export function hit(severity = 0.5, pan = 0) {
 }
 
 // Two blades clashing.
-export function clash(pan = 0) {
+export function clash(pan = 0, vol = 1.0) {
   if (!unlocked) return;
   ensureCtx(); if (!ctx) return;
   const out = panned(pan);
@@ -116,14 +116,14 @@ export function clash(pan = 0) {
   o.type = "square";
   o.frequency.setValueAtTime(1700, t0);
   o.frequency.exponentialRampToValueAtTime(800, t0 + 0.25);
-  const e = envGain(t0, 0.002, 0.30, 0.18);
+  const e = envGain(t0, 0.002, 0.30, 0.18 * vol);
   o.connect(e).connect(out);
   o.start(t0); o.stop(t0 + 0.32);
 
   const o2 = ctx.createOscillator();
   o2.type = "sawtooth";
   o2.frequency.setValueAtTime(2400, t0);
-  const e2 = envGain(t0, 0.001, 0.18, 0.10);
+  const e2 = envGain(t0, 0.001, 0.18, 0.10 * vol);
   o2.connect(e2).connect(out);
   o2.start(t0); o2.stop(t0 + 0.22);
 }

@@ -48,10 +48,12 @@ export function makePlayer(name, spawn, weaponKey) {
     knockedDownUntilMs: 0,
     commitStrikeUntilMs: 0,
     severedLeg: false,
+    severedArm: false,
     _lastTipVel: { x: 0, y: 0, z: 0 },
     bleedUntilMs: 0,
     bleedDmgPerSec: 0,
     bleedAccum: 0,
+    lastSlamAtMs: 0,           // body-slam cooldown
     // Anim hint sent to clients.
     animTick: 0,
   };
@@ -239,6 +241,7 @@ export function maybeRespawn(p, spawn, nowMs) {
   p.disarmedUntilMs = 0;
   p.knockedDownUntilMs = 0;
   p.severedLeg = false;
+  p.severedArm = false;
   p.bleedUntilMs = 0;
   p.bleedDmgPerSec = 0;
   p.bleedAccum = 0;

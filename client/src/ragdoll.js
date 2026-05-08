@@ -34,6 +34,7 @@ export function rapierStep(dt) {
   // Rapier prefers a fixed substep; we clamp dt to keep stable.
   const sub = Math.max(1, Math.ceil(dt / (1 / 60)));
   const stepDt = dt / sub;
+  world.timestep = stepDt;        // CRITICAL: world.step() ignores dt arg, uses world.timestep
   for (let i = 0; i < sub; i++) world.step();
   for (const rd of activeRagdolls) rd._sync();
 }
@@ -67,39 +68,78 @@ function joinFixed(world, a, b, ax, ay, az, bx, by, bz) {
 
 // Build a ragdoll at world position+yaw. Optionally apply a directional impulse on the
 // torso to simulate the strike that killed the player.
+//
+// 11-body ragdoll: head, torso, hips + upper/forearm × 2 + thigh/shin × 2.
+// Matches the multi-bone proportions used by buildCharacter() so dropped corpses look
+// the same as living players (Half-Sword-style limbs).
 export function createRagdoll(scene, pos, yaw = 0, color = 0x9aa0a8, accent = 0xc8a97e, impulse = null) {
   if (!rapierReady) return null;
 
   const yawQ = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), yaw);
 
-  const skinMat = new THREE.MeshStandardMaterial({ color: 0xc8997a, roughness: 0.9 });
-  const armorMat = new THREE.MeshStandardMaterial({ color, roughness: 0.55, metalness: 0.4 });
-  const cloakMat = new THREE.MeshStandardMaterial({ color: accent, roughness: 0.85 });
-  const gripMat = new THREE.MeshStandardMaterial({ color: 0x2a1c12, roughness: 0.95 });
+  const skinMat   = new THREE.MeshStandardMaterial({ color: 0xc8997a, roughness: 0.9 });
+  const plateMat  = new THREE.MeshStandardMaterial({ color, roughness: 0.45, metalness: 0.55 });
+  const mailMat   = new THREE.MeshStandardMaterial({ color: 0x4a4a52, roughness: 0.55, metalness: 0.7 });
+  const leatherMat= new THREE.MeshStandardMaterial({ color: 0x2a1c12, roughness: 0.95 });
+  const cloakMat  = new THREE.MeshStandardMaterial({ color: accent, roughness: 0.85 });
 
   const root = new THREE.Group();
   scene.add(root);
 
-  // Body parts: torso, hips, head, two arms, two legs.
+  // Body half-extents and anchor offsets (mirror buildCharacter's segment lengths).
+  const TORSO   = { hx: 0.30, hy: 0.16, hz: 0.18 };  // chest+abdomen merged
+  const HIPS    = { hx: 0.26, hy: 0.09, hz: 0.18 };
+  const HEAD    = { hx: 0.18, hy: 0.20, hz: 0.18 };
+  const UPARM   = { hx: 0.08, hy: 0.18, hz: 0.08 };
+  const FOREARM = { hx: 0.08, hy: 0.20, hz: 0.08 };
+  const THIGH   = { hx: 0.10, hy: 0.20, hz: 0.10 };
+  const SHIN    = { hx: 0.09, hy: 0.18, hz: 0.09 };
+
   const px = pos.x, pz = pos.z, py = pos.y;
-  const torsoBody = makeBoxBody(world, 0.30, 0.30, 0.18, px, py + 1.10, pz);
-  const hipsBody  = makeBoxBody(world, 0.26, 0.10, 0.18, px, py + 0.78, pz);
-  const headBody  = makeBoxBody(world, 0.18, 0.20, 0.18, px, py + 1.55, pz, 1.2);
-  const armLBody  = makeBoxBody(world, 0.08, 0.22, 0.08, px - 0.40, py + 1.10, pz);
-  const armRBody  = makeBoxBody(world, 0.08, 0.22, 0.08, px + 0.40, py + 1.10, pz);
-  const legLBody  = makeBoxBody(world, 0.10, 0.30, 0.10, px - 0.16, py + 0.42, pz);
-  const legRBody  = makeBoxBody(world, 0.10, 0.30, 0.10, px + 0.16, py + 0.42, pz);
+  // Y centers (spawn upright in T-pose). Will be yaw-rotated below.
+  const yHips     = py + 0.84;
+  const yTorso    = py + 1.18;
+  const yHead     = py + 1.62;
+  const yShoulder = py + 1.40;
+  const yUparm    = yShoulder - UPARM.hy;
+  const yForearm  = yUparm - UPARM.hy - FOREARM.hy;
+  const yHip      = yHips - HIPS.hy;
+  const yThigh    = yHip - THIGH.hy;
+  const yShin     = yThigh - THIGH.hy - SHIN.hy;
 
-  // Joints (spherical = no twist limits — quick and dirty).
-  joinSpherical(world, torsoBody, hipsBody, 0, -0.32, 0, 0, 0.10, 0);
-  joinSpherical(world, torsoBody, headBody, 0,  0.30, 0, 0, -0.20, 0);
-  joinSpherical(world, torsoBody, armLBody,-0.35, 0.20, 0, 0,  0.20, 0);
-  joinSpherical(world, torsoBody, armRBody, 0.35, 0.20, 0, 0,  0.20, 0);
-  joinSpherical(world, hipsBody,  legLBody,-0.16,-0.10, 0, 0,  0.30, 0);
-  joinSpherical(world, hipsBody,  legRBody, 0.16,-0.10, 0, 0,  0.30, 0);
+  const torsoBody  = makeBoxBody(world, TORSO.hx, TORSO.hy, TORSO.hz, px, yTorso, pz);
+  const hipsBody   = makeBoxBody(world, HIPS.hx,  HIPS.hy,  HIPS.hz,  px, yHips, pz);
+  const headBody   = makeBoxBody(world, HEAD.hx,  HEAD.hy,  HEAD.hz,  px, yHead, pz, 1.2);
+  const upArmLBody = makeBoxBody(world, UPARM.hx, UPARM.hy, UPARM.hz, px - 0.40, yUparm, pz);
+  const upArmRBody = makeBoxBody(world, UPARM.hx, UPARM.hy, UPARM.hz, px + 0.40, yUparm, pz);
+  const forArmLBody= makeBoxBody(world, FOREARM.hx, FOREARM.hy, FOREARM.hz, px - 0.40, yForearm, pz);
+  const forArmRBody= makeBoxBody(world, FOREARM.hx, FOREARM.hy, FOREARM.hz, px + 0.40, yForearm, pz);
+  const thighLBody = makeBoxBody(world, THIGH.hx, THIGH.hy, THIGH.hz,  px - 0.16, yThigh, pz);
+  const thighRBody = makeBoxBody(world, THIGH.hx, THIGH.hy, THIGH.hz,  px + 0.16, yThigh, pz);
+  const shinLBody  = makeBoxBody(world, SHIN.hx,  SHIN.hy,  SHIN.hz,   px - 0.16, yShin, pz);
+  const shinRBody  = makeBoxBody(world, SHIN.hx,  SHIN.hy,  SHIN.hz,   px + 0.16, yShin, pz);
 
-  // Initial yaw: rotate every body around player center.
-  for (const body of [torsoBody, hipsBody, headBody, armLBody, armRBody, legLBody, legRBody]) {
+  // Joints — spherical for all (cheap, no twist limits).
+  // Each anchor is in the local frame of its body; offsets are signed half-extents.
+  joinSpherical(world, torsoBody, hipsBody,  0, -TORSO.hy, 0,    0,  HIPS.hy, 0);
+  joinSpherical(world, torsoBody, headBody,  0,  TORSO.hy, 0,    0, -HEAD.hy, 0);
+  joinSpherical(world, torsoBody, upArmLBody, -TORSO.hx - UPARM.hx, TORSO.hy * 0.4, 0,  0,  UPARM.hy, 0);
+  joinSpherical(world, torsoBody, upArmRBody,  TORSO.hx + UPARM.hx, TORSO.hy * 0.4, 0,  0,  UPARM.hy, 0);
+  joinSpherical(world, upArmLBody, forArmLBody, 0, -UPARM.hy, 0,  0,  FOREARM.hy, 0);
+  joinSpherical(world, upArmRBody, forArmRBody, 0, -UPARM.hy, 0,  0,  FOREARM.hy, 0);
+  joinSpherical(world, hipsBody,  thighLBody, -0.16, -HIPS.hy, 0,  0,  THIGH.hy, 0);
+  joinSpherical(world, hipsBody,  thighRBody,  0.16, -HIPS.hy, 0,  0,  THIGH.hy, 0);
+  joinSpherical(world, thighLBody, shinLBody,  0, -THIGH.hy, 0,  0,  SHIN.hy, 0);
+  joinSpherical(world, thighRBody, shinRBody,  0, -THIGH.hy, 0,  0,  SHIN.hy, 0);
+
+  const allBodies = [
+    torsoBody, hipsBody, headBody,
+    upArmLBody, upArmRBody, forArmLBody, forArmRBody,
+    thighLBody, thighRBody, shinLBody, shinRBody,
+  ];
+
+  // Initial yaw — rotate every body around player center.
+  for (const body of allBodies) {
     const t = body.translation();
     const local = new THREE.Vector3(t.x - px, t.y - py, t.z - pz).applyQuaternion(yawQ);
     body.setTranslation({ x: px + local.x, y: py + local.y, z: pz + local.z }, true);
@@ -114,13 +154,17 @@ export function createRagdoll(scene, pos, yaw = 0, color = 0x9aa0a8, accent = 0x
     return { body: b, mesh: m };
   }
   const visuals = [
-    box(torsoBody, 0.30, 0.30, 0.18, armorMat),
-    box(hipsBody,  0.26, 0.10, 0.18, armorMat),
-    box(headBody,  0.18, 0.20, 0.18, skinMat),
-    box(armLBody,  0.08, 0.22, 0.08, armorMat),
-    box(armRBody,  0.08, 0.22, 0.08, armorMat),
-    box(legLBody,  0.10, 0.30, 0.10, gripMat),
-    box(legRBody,  0.10, 0.30, 0.10, gripMat),
+    box(torsoBody,  TORSO.hx, TORSO.hy, TORSO.hz, plateMat),
+    box(hipsBody,   HIPS.hx,  HIPS.hy,  HIPS.hz,  plateMat),
+    box(headBody,   HEAD.hx,  HEAD.hy,  HEAD.hz,  skinMat),
+    box(upArmLBody, UPARM.hx, UPARM.hy, UPARM.hz, mailMat),
+    box(upArmRBody, UPARM.hx, UPARM.hy, UPARM.hz, mailMat),
+    box(forArmLBody,FOREARM.hx,FOREARM.hy,FOREARM.hz, plateMat),
+    box(forArmRBody,FOREARM.hx,FOREARM.hy,FOREARM.hz, plateMat),
+    box(thighLBody, THIGH.hx, THIGH.hy, THIGH.hz, mailMat),
+    box(thighRBody, THIGH.hx, THIGH.hy, THIGH.hz, mailMat),
+    box(shinLBody,  SHIN.hx,  SHIN.hy,  SHIN.hz,  plateMat),
+    box(shinRBody,  SHIN.hx,  SHIN.hy,  SHIN.hz,  plateMat),
   ];
 
   // Apply incoming impulse to torso (and a smaller one to head) for that "blown-back" feel.
@@ -132,8 +176,8 @@ export function createRagdoll(scene, pos, yaw = 0, color = 0x9aa0a8, accent = 0x
 
   const rd = {
     root,
-    bodies: [torsoBody, hipsBody, headBody, armLBody, armRBody, legLBody, legRBody],
-    expiresAt: performance.now() + 9000,    // cleaned up after a while
+    bodies: allBodies,
+    expiresAt: performance.now() + 9000,
     _sync() {
       for (const v of visuals) {
         const t = v.body.translation();
@@ -163,10 +207,68 @@ export function tickRagdolls(now = performance.now()) {
     const rd = activeRagdolls[i];
     if (now > rd.expiresAt) rd.destroy();
   }
+  // Expire physics-driven falling helmets.
+  for (let i = activeHelms.length - 1; i >= 0; i--) {
+    const h = activeHelms[i];
+    if (now > h.expiresAt) {
+      try { h.onExpire?.(); } catch {}
+      scene_remove(h);
+      activeHelms.splice(i, 1);
+    } else {
+      const t = h.body.translation();
+      const r = h.body.rotation();
+      h.mesh.position.set(t.x, t.y, t.z);
+      h.mesh.quaternion.set(r.x, r.y, r.z, r.w);
+    }
+  }
 }
 
 export function clearAllRagdolls() {
   while (activeRagdolls.length) activeRagdolls.pop().destroy();
+  while (activeHelms.length) {
+    const h = activeHelms.pop();
+    try { h.onExpire?.(); } catch {}
+    scene_remove(h);
+  }
+}
+
+// Physics-driven detached helmet. Ball collider approximates the dome; dynamic body
+// inherits the impulse from the killing strike so the helm visibly tumbles + rolls
+// before settling on the floor. Lasts ~10s before fade-and-cleanup.
+const activeHelms = [];
+function scene_remove(h) {
+  if (h.scene && h.mesh) {
+    try { h.scene.remove(h.mesh); } catch {}
+  }
+  if (h.body) {
+    try { world.removeRigidBody(h.body); } catch {}
+  }
+}
+export function spawnFallingHelm(scene, helmMesh, pos, dirImpulse, onExpire) {
+  if (!rapierReady) return null;
+  const desc = RAPIER.RigidBodyDesc.dynamic()
+    .setTranslation(pos.x, pos.y, pos.z)
+    .setLinearDamping(0.45)
+    .setAngularDamping(0.25);
+  const body = world.createRigidBody(desc);
+  // Ball collider sized to the helm dome (~radius 0.27).
+  const cd = RAPIER.ColliderDesc.ball(0.27)
+    .setDensity(3.0)
+    .setRestitution(0.45)
+    .setFriction(0.55);
+  world.createCollider(cd, body);
+  scene.add(helmMesh);
+  body.applyImpulse({
+    x: dirImpulse.x * 4, y: 3 + Math.random() * 2, z: dirImpulse.z * 4,
+  }, true);
+  body.applyTorqueImpulse({
+    x: (Math.random() - 0.5) * 1.2,
+    y: (Math.random() - 0.5) * 1.2,
+    z: (Math.random() - 0.5) * 1.2,
+  }, true);
+  const entry = { body, mesh: helmMesh, scene, expiresAt: performance.now() + 10000, onExpire };
+  activeHelms.push(entry);
+  return entry;
 }
 
 // Spawn a few static-ish barrels at arena edges. They live in the same Rapier world,

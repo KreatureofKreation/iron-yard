@@ -147,6 +147,14 @@ export function resolveHits(players, nowMs, physics) {
         t.severedLeg = true;
         events.push({ kind: "sever", id: t.id, limb: "leg", at: { x: t.pos.x, y: t.pos.y + 0.3, z: t.pos.z } });
       }
+    } else if (zone === "torso" && t.hp > 0) {
+      // Arm sever roll: heavy slash/pierce to torso. Permanent disarm for the round.
+      if (!t.severedArm && (w.damageType === "slash" || w.damageType === "pierce") && dmg >= 35 && Math.random() < 0.20) {
+        t.severedArm = true;
+        // Force perma-disarm: long disarm window so sword stays on the ground.
+        t.disarmedUntilMs = Math.max(t.disarmedUntilMs, nowMs + 3_600_000);
+        events.push({ kind: "sever", id: t.id, limb: "arm", at: { x: t.pos.x, y: t.pos.y + 1.2, z: t.pos.z } });
+      }
     }
 
     // Damage-type status effects.
