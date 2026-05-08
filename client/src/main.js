@@ -181,9 +181,9 @@ const REST = REST_LOCAL_BASE;
 // release speed (release = active hit window).
 // =============================================================================
 const PHASE_BASE = {
-  swing:    { windup: 320, release: 260, recovery: 360 },
-  overhead: { windup: 380, release: 300, recovery: 400 },
-  stab:     { windup: 240, release: 200, recovery: 280 },
+  swing:    { windup: 320, release: 260, recovery: 280 },
+  overhead: { windup: 380, release: 300, recovery: 320 },
+  stab:     { windup: 240, release: 200, recovery: 220 },
 };
 function phasesFor(weaponKey, type) {
   const base = type === "stab" ? PHASE_BASE.stab : type === "overhead" ? PHASE_BASE.overhead : PHASE_BASE.swing;

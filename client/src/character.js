@@ -12,12 +12,16 @@ export function buildCharacter({ color = 0x9aa0a8, accent = 0xc8a97e, isLocal = 
   const root = new THREE.Group();
   root.name = "character";
 
-  const skinMat   = new THREE.MeshStandardMaterial({ color: 0xc8997a, roughness: 0.9 });
-  const plateMat  = new THREE.MeshStandardMaterial({ color, roughness: 0.45, metalness: 0.55 });
-  const platePale = new THREE.MeshStandardMaterial({ color, roughness: 0.55, metalness: 0.45 });
+  const skinMat    = new THREE.MeshStandardMaterial({ color: 0xc8997a, roughness: 0.9 });
+  // Plate gets a procedural scratch/dent texture so armor reads as actual metal,
+  // not flat-shaded primitives. Generated once per rig; reused on all plate parts.
+  const plateTex   = makePlateTexture(color);
+  const plateMat   = new THREE.MeshStandardMaterial({ map: plateTex, color: 0xffffff, roughness: 0.45, metalness: 0.55 });
+  const platePale  = new THREE.MeshStandardMaterial({ map: plateTex, color: 0xeeeeee, roughness: 0.55, metalness: 0.45 });
   const leatherMat = new THREE.MeshStandardMaterial({ color: 0x2a1c12, roughness: 0.95 });
-  const mailMat   = new THREE.MeshStandardMaterial({ color: 0x4a4a52, roughness: 0.55, metalness: 0.7 });
-  const goldMat   = new THREE.MeshStandardMaterial({ color: 0x9a7a3a, metalness: 0.7, roughness: 0.4 });
+  const mailTex    = makeMailTexture();
+  const mailMat    = new THREE.MeshStandardMaterial({ map: mailTex, color: 0x6a6a72, roughness: 0.55, metalness: 0.7 });
+  const goldMat    = new THREE.MeshStandardMaterial({ color: 0x9a7a3a, metalness: 0.7, roughness: 0.4 });
 
   const radius = RUNTIME.player.radius;
   const height = RUNTIME.player.height;
@@ -40,6 +44,19 @@ export function buildCharacter({ color = 0x9aa0a8, accent = 0xc8a97e, isLocal = 
   const pelvis = new THREE.Mesh(new THREE.CylinderGeometry(radius * 0.78, radius * 0.62, height * 0.13, 14), plateMat);
   pelvis.position.y = Y_PELVIS_TOP - height * 0.065;
   pelvis.castShadow = true; root.add(pelvis);
+  // Belt — leather strap around the waist with a brass buckle.
+  const beltStrap = new THREE.Mesh(
+    new THREE.CylinderGeometry(radius * 0.82, radius * 0.82, height * 0.045, 18),
+    leatherMat,
+  );
+  beltStrap.position.y = Y_PELVIS_TOP - height * 0.005;
+  root.add(beltStrap);
+  const buckle = new THREE.Mesh(
+    new THREE.BoxGeometry(radius * 0.30, height * 0.055, 0.02),
+    goldMat,
+  );
+  buckle.position.set(0, Y_PELVIS_TOP - height * 0.005, radius * 0.83);
+  root.add(buckle);
   // Tassets — small plate skirt
   const tassetMat = plateMat;
   const tassetGeo = new THREE.BoxGeometry(radius * 0.42, height * 0.10, 0.06);
@@ -709,3 +726,69 @@ function buildWeaponMesh(key) {
 }
 
 export const WEAPON_LIST = ["arming", "longsword", "mace", "spear", "swordshield"];
+
+// ---------- Procedural plate-armor texture ----------
+// Subtle scratch + dent noise on top of the base color. Generated once per rig.
+function makePlateTexture(baseHex) {
+  const size = 128;
+  const c = document.createElement("canvas");
+  c.width = c.height = size;
+  const ctx = c.getContext("2d");
+  const r = (baseHex >> 16) & 0xff;
+  const g = (baseHex >> 8) & 0xff;
+  const b = baseHex & 0xff;
+  // Brushed gradient.
+  const grad = ctx.createLinearGradient(0, 0, 0, size);
+  grad.addColorStop(0, `rgb(${Math.min(255, r + 18)},${Math.min(255, g + 18)},${Math.min(255, b + 18)})`);
+  grad.addColorStop(1, `rgb(${Math.max(0, r - 22)},${Math.max(0, g - 22)},${Math.max(0, b - 22)})`);
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, size, size);
+  // Horizontal brushed lines.
+  ctx.strokeStyle = "rgba(255,255,255,0.04)";
+  ctx.lineWidth = 1;
+  for (let i = 0; i < size; i += 2) {
+    ctx.beginPath(); ctx.moveTo(0, i); ctx.lineTo(size, i + Math.random() * 0.5); ctx.stroke();
+  }
+  // Random dents.
+  for (let i = 0; i < 20; i++) {
+    const x = Math.random() * size, y = Math.random() * size;
+    const rad = 1 + Math.random() * 3;
+    ctx.fillStyle = `rgba(0,0,0,${0.10 + Math.random() * 0.15})`;
+    ctx.beginPath(); ctx.arc(x, y, rad, 0, Math.PI * 2); ctx.fill();
+  }
+  // Highlights.
+  for (let i = 0; i < 8; i++) {
+    const x = Math.random() * size, y = Math.random() * size;
+    ctx.fillStyle = `rgba(255,255,255,${0.04 + Math.random() * 0.06})`;
+    ctx.beginPath(); ctx.arc(x, y, 0.5 + Math.random() * 1.5, 0, Math.PI * 2); ctx.fill();
+  }
+  const tex = new THREE.CanvasTexture(c);
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  tex.repeat.set(2, 2);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
+
+// Procedural mail texture — tiny dotted dark/light pattern simulating chain links.
+function makeMailTexture() {
+  const size = 64;
+  const c = document.createElement("canvas");
+  c.width = c.height = size;
+  const ctx = c.getContext("2d");
+  ctx.fillStyle = "#3a3a42";
+  ctx.fillRect(0, 0, size, size);
+  for (let y = 0; y < size; y += 4) {
+    const off = (y / 4) % 2 === 0 ? 0 : 2;
+    for (let x = off; x < size; x += 4) {
+      ctx.fillStyle = "#5e5e68";
+      ctx.fillRect(x, y, 2, 2);
+      ctx.fillStyle = "#1f1f25";
+      ctx.fillRect(x + 1, y + 1, 1, 1);
+    }
+  }
+  const tex = new THREE.CanvasTexture(c);
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  tex.repeat.set(8, 8);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}

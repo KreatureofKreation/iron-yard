@@ -1,6 +1,91 @@
 import * as THREE from "three";
 import { RUNTIME } from "./config.js";
 
+// ---------- Procedural textures (canvas-generated, no external assets) ----------
+function noiseTexture({ size = 256, base = [0x6a, 0x55, 0x36], variance = 24, scale = 4, repeat = 8 } = {}) {
+  const c = document.createElement("canvas");
+  c.width = c.height = size;
+  const ctx = c.getContext("2d");
+  const img = ctx.createImageData(size, size);
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      const n = (Math.sin(x * 0.13) + Math.cos(y * 0.17) + Math.sin((x + y) * 0.09)) * 0.33;
+      const m = Math.random() * variance - variance / 2 + n * variance * 0.5;
+      const i = (y * size + x) * 4;
+      img.data[i + 0] = Math.max(0, Math.min(255, base[0] + m));
+      img.data[i + 1] = Math.max(0, Math.min(255, base[1] + m));
+      img.data[i + 2] = Math.max(0, Math.min(255, base[2] + m));
+      img.data[i + 3] = 255;
+    }
+  }
+  ctx.putImageData(img, 0, 0);
+  const tex = new THREE.CanvasTexture(c);
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  tex.repeat.set(repeat, repeat);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
+
+function stoneBrickTexture({ size = 256, repeat = 4 } = {}) {
+  const c = document.createElement("canvas");
+  c.width = c.height = size;
+  const ctx = c.getContext("2d");
+  // Mortar background.
+  ctx.fillStyle = "#2c241c";
+  ctx.fillRect(0, 0, size, size);
+  // Brick rows.
+  const rowH = 32, brickW = 64;
+  for (let y = 0; y < size; y += rowH) {
+    const off = ((y / rowH) % 2) * (brickW / 2);
+    for (let x = -brickW; x < size + brickW; x += brickW) {
+      const bx = x + off;
+      const grey = 60 + Math.floor(Math.random() * 35);
+      ctx.fillStyle = `rgb(${grey + 15},${grey + 8},${grey})`;
+      ctx.fillRect(bx + 1, y + 1, brickW - 2, rowH - 2);
+      // subtle noise on each brick
+      ctx.fillStyle = "rgba(0,0,0,0.08)";
+      for (let i = 0; i < 6; i++) {
+        ctx.fillRect(bx + Math.random() * brickW, y + Math.random() * rowH, 2, 2);
+      }
+    }
+  }
+  const tex = new THREE.CanvasTexture(c);
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  tex.repeat.set(repeat, repeat);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
+
+function dirtTexture({ size = 256, repeat = 16 } = {}) {
+  const c = document.createElement("canvas");
+  c.width = c.height = size;
+  const ctx = c.getContext("2d");
+  ctx.fillStyle = "#5a4530";
+  ctx.fillRect(0, 0, size, size);
+  // Pebbles + dark patches.
+  for (let i = 0; i < 800; i++) {
+    const x = Math.random() * size, y = Math.random() * size;
+    const r = 1 + Math.random() * 3;
+    const shade = Math.random();
+    ctx.fillStyle = shade < 0.5 ? "rgba(40,28,18,0.4)" : "rgba(120,95,65,0.35)";
+    ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
+  }
+  // Cracks.
+  ctx.strokeStyle = "rgba(20,12,6,0.25)";
+  ctx.lineWidth = 1;
+  for (let i = 0; i < 12; i++) {
+    ctx.beginPath();
+    ctx.moveTo(Math.random() * size, Math.random() * size);
+    ctx.lineTo(Math.random() * size, Math.random() * size);
+    ctx.stroke();
+  }
+  const tex = new THREE.CanvasTexture(c);
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  tex.repeat.set(repeat, repeat);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
+
 // Build static arena scene + sky/lights.
 export function buildScene() {
   const scene = new THREE.Scene();
@@ -20,18 +105,28 @@ export function buildScene() {
   scene.add(new THREE.HemisphereLight(0x556677, 0x2a1f15, 0.45));
   scene.add(new THREE.AmbientLight(0x111111, 0.4));
 
-  // Ground.
+  // Ground — procedural dirt texture with pebbles + cracks.
   const size = RUNTIME.arena.size;
   const groundGeo = new THREE.PlaneGeometry(size, size, 16, 16);
-  const groundMat = new THREE.MeshStandardMaterial({ color: 0x6a5536, roughness: 1 });
+  const groundTex = dirtTexture({ repeat: Math.max(8, Math.floor(size / 2)) });
+  const groundMat = new THREE.MeshStandardMaterial({
+    map: groundTex,
+    color: 0xffffff,
+    roughness: 1,
+  });
   const ground = new THREE.Mesh(groundGeo, groundMat);
   ground.rotation.x = -Math.PI / 2;
   ground.receiveShadow = true;
   scene.add(ground);
 
-  // Outer wall (4 segments).
+  // Outer wall — procedural stone-brick texture.
   const wallH = RUNTIME.arena.wallH;
-  const wallMat = new THREE.MeshStandardMaterial({ color: 0x4a3a28, roughness: 0.95 });
+  const wallTex = stoneBrickTexture({ repeat: 6 });
+  const wallMat = new THREE.MeshStandardMaterial({
+    map: wallTex,
+    color: 0xffffff,
+    roughness: 0.95,
+  });
   const wallThick = 0.5;
   const halfS = size / 2;
   const wallSpecs = [

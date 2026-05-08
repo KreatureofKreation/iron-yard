@@ -23,16 +23,9 @@ export function weaponRacks() {
   ];
 }
 
-// Static AABB obstacles (pillars) — server clamps players against these.
+// No pillars — open arena. Kept the function for compatibility (callers iterate it).
 export function obstacles() {
-  // Four pillars near center for cover.
-  const r = 0.6;
-  return [
-    { x: -4, z: -4, hx: r, hz: r },
-    { x:  4, z: -4, hx: r, hz: r },
-    { x:  4, z:  4, hx: r, hz: r },
-    { x: -4, z:  4, hx: r, hz: r },
-  ];
+  return [];
 }
 
 // Clamp position to arena floor and walls + push out of pillars.
