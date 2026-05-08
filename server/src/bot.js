@@ -123,14 +123,29 @@ export function botInput(bot, players, nowMs, racks = null) {
   // Movement decision.
   let mv = { x: 0, y: 0 };
   if (botHelpless) {
-    // Disarmed/stunned: head for nearest weapon rack to rearm if able to move.
-    const rack = findNearestRack(bot, racks);
     const stunned = (bot.stunUntilMs || 0) > now;
-    if (rack && !stunned) {
-      const rdx = rack.x - bot.pos.x, rdz = rack.z - bot.pos.z;
-      bot._rackYaw = Math.atan2(-rdx, -rdz);
-      mv.y = 1;
-      mv.x = 0;
+    if (!stunned) {
+      // Pick the closer of (nearest rack, nearest unowned dropped sword).
+      const rack = findNearestRack(bot, racks);
+      let bestX = null, bestZ = null, bestD = Infinity;
+      if (rack) { bestX = rack.x; bestZ = rack.z; bestD = rack.dist; }
+      for (const q of players.values()) {
+        if (q === bot) continue;
+        const dropped = !q.alive || (q.stunUntilMs || 0) > now || (q.disarmedUntilMs || 0) > now;
+        if (!dropped) continue;
+        const dx = (q.pos.x - bot.pos.x), dz = (q.pos.z - bot.pos.z);
+        const d = Math.hypot(dx, dz);
+        if (d < bestD) { bestD = d; bestX = q.pos.x; bestZ = q.pos.z; }
+      }
+      if (bestX != null) {
+        const rdx = bestX - bot.pos.x, rdz = bestZ - bot.pos.z;
+        bot._rackYaw = Math.atan2(-rdx, -rdz);
+        mv.y = 1;
+        mv.x = 0;
+      } else {
+        mv.y = -1;
+        mv.x = Math.sin(now / 250 + bot.id) * 0.4;
+      }
     } else {
       mv.y = -1;
       mv.x = Math.sin(now / 250 + bot.id) * 0.4;
