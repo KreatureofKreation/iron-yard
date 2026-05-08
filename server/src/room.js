@@ -216,9 +216,12 @@ export class Room {
         this.physics.setSwordGravity(p.id, false);
         this.physics.driveSword(p.id, p.weaponTipTarget, dt);
       }
-      // Restorative torque on torso + head (active ragdoll uprighting).
-      this.physics.driveTorso(p.id, dt);
-      this.physics.driveHead(p.id, dt);
+      // Restorative torque on torso + head — skip while knocked down so the body
+      // physically slumps under gravity and joint constraints (real ragdoll).
+      if (!knocked && !dead) {
+        this.physics.driveTorso(p.id, dt);
+        this.physics.driveHead(p.id, dt);
+      }
     }
     this.physics.step();
 

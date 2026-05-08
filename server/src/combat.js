@@ -104,9 +104,15 @@ export function resolveHits(players, nowMs, physics) {
     a.lastHitAtMs.set(t.id, nowMs);
     a.stamina = Math.max(0, a.stamina - CONFIG.PLAYER.staminaSwingCost);
 
-    // Knockdown: hits > 60 dmg topple victim for 1.5s (input locked, sword dropped).
+    // Knockdown: hits > 60 dmg topple victim for 1.5s (input locked, sword dropped,
+    // torso joint loosens so they physically slump). Also push torso in attacker's
+    // direction so the flop reads visually.
     if (dmg > 60 && t.hp > 0) {
       t.knockedDownUntilMs = Math.max(t.knockedDownUntilMs, nowMs + 1500);
+      if (physics) {
+        const dir = norm(sub(t.pos, a.pos));
+        physics.pushTorso(t.id, { x: dir.x * 8, y: 2, z: dir.z * 8 });
+      }
     }
 
     // Knockback impulse (separate channel from movement vel).

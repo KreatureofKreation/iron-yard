@@ -321,6 +321,13 @@ export class PhysicsWorld {
     sw.body.setGravityScale(on ? 1 : 0, true);
   }
 
+  // Apply an instant impulse to the torso (e.g. on knockdown for visible flop).
+  pushTorso(playerId, impulse) {
+    const t = this.torsos.get(playerId);
+    if (!t) return;
+    t.body.applyImpulse(impulse, true);
+  }
+
   // Snap sword body back to a position with zero velocity (e.g. on respawn).
   resetSwordPos(playerId, pos) {
     const sw = this.swords.get(playerId);
