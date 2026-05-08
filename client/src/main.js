@@ -260,6 +260,7 @@ net.on("snap", (m) => {
       state.local.stunMsLeft = p.stunMsLeft || 0;
       state.local.bleedMsLeft = p.bleedMsLeft || 0;
       state.local.torsoRot = p.torsoRot || null;
+      state.local.headRot  = p.headRot  || null;
       state._myScore = p.score || 0;
       state._myDeaths = p.deaths || 0;
       HUD.setHp(p.hp, RUNTIME.player.hp);
@@ -300,6 +301,7 @@ net.on("snap", (m) => {
     r.bleedMsLeft = p.bleedMsLeft || 0;
     r.stamina = p.stamina ?? 100;
     r.torsoRot = p.torsoRot || null;
+    r.headRot  = p.headRot  || null;
     // Restore detached helm + rig visibility on remote respawn.
     if (!wasAliveR && p.alive) {
       if (r.rig?.parts?.helm) r.rig.parts.helm.visible = true;
@@ -627,6 +629,7 @@ function frame(t) {
       verAim:   inp.aim.y,
       tipDist:  tipDistLocal,
       torsoRot: state.local.torsoRot,
+      headRot:  state.local.headRot,
       playerYaw: state.local.yaw,
     });
     state.rig.setInvuln((state.local.invulnMs || 0) > 0, performance.now() / 1000);
@@ -834,6 +837,7 @@ function interpolateRemote(r, renderTime) {
     verAim: remoteVerAim,
     tipDist: remoteTipDist,
     torsoRot: r.torsoRot,
+    headRot:  r.headRot,
     playerYaw: yaw,
   });
   r.rig.setInvuln((r.invulnMs || 0) > 0, performance.now() / 1000);

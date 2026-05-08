@@ -35,6 +35,7 @@ export class PhysicsWorld {
     this.swords = new Map();         // playerId -> { body, collider, weaponMass, length }
     this.bodies = new Map();         // playerId -> { body, collider }
     this.torsos = new Map();         // playerId -> { body, joint } — active ragdoll torso
+    this.heads  = new Map();         // playerId -> { body, joint } — head jointed to torso
     this.colliderToPlayerSword = new Map();  // colliderHandle -> playerId (attacker)
     this.colliderToPlayerBody  = new Map();  // colliderHandle -> playerId (victim)
     // Per-tick contact register: attackerId -> { victimId -> impactSpeed }
@@ -123,6 +124,56 @@ export class PhysicsWorld {
     if (!t) return null;
     const rot = t.body.rotation();
     return { rot: { x: rot.x, y: rot.y, z: rot.z, w: rot.w } };
+  }
+
+  // Head body, spherical-jointed to the torso. Soft torque keeps it upright.
+  attachHead(playerId, pos) {
+    if (this.heads.has(playerId)) this.detachHead(playerId);
+    const torso = this.torsos.get(playerId);
+    if (!torso) return null;
+    const desc = RAPIER.RigidBodyDesc.dynamic()
+      .setTranslation(pos.x, pos.y + 1.55, pos.z)
+      .setLinearDamping(3.0)
+      .setAngularDamping(6.0);
+    const head = this.world.createRigidBody(desc);
+    const cd = RAPIER.ColliderDesc.ball(0.18)
+      .setDensity(40)
+      .setCollisionGroups(0);
+    this.world.createCollider(cd, head);
+    const params = RAPIER.JointData.spherical(
+      { x: 0, y: 0.30, z: 0 },        // anchor on torso (top)
+      { x: 0, y: -0.18, z: 0 },       // anchor on head (bottom)
+    );
+    const joint = this.world.createImpulseJoint(params, torso.body, head, true);
+    this.heads.set(playerId, { body: head, joint });
+    return head;
+  }
+
+  detachHead(playerId) {
+    const h = this.heads.get(playerId);
+    if (!h) return;
+    if (h.joint) this.world.removeImpulseJoint(h.joint, true);
+    this.world.removeRigidBody(h.body);
+    this.heads.delete(playerId);
+  }
+
+  driveHead(playerId, dt = 1 / 30) {
+    const h = this.heads.get(playerId);
+    if (!h) return;
+    const r = h.body.rotation();
+    // Weaker spring than torso so head bobs more freely.
+    const ax = -r.x * 14;
+    const ay = -r.y * 14;
+    const az = -r.z * 14;
+    const m = h.body.mass() || 1;
+    h.body.applyTorqueImpulse({ x: ax * m * dt, y: ay * m * dt, z: az * m * dt }, true);
+  }
+
+  headState(playerId) {
+    const h = this.heads.get(playerId);
+    if (!h) return null;
+    const r = h.body.rotation();
+    return { rot: { x: r.x, y: r.y, z: r.z, w: r.w } };
   }
 
   attachSword(playerId, weaponMass, length, startPos = { x: 0, y: 1.4, z: 0 }) {

@@ -143,7 +143,7 @@ export function buildCharacter({ color = 0x9aa0a8, accent = 0xc8a97e, isLocal = 
      * Per-frame animation update.
      * mvSpeed: 0..~7 (m/s). swinging boolean. dt seconds. blocking boolean.
      */
-    animate(dt, { mvSpeed = 0, swinging = false, blocking = false, alive = true, swingLat = 0, swingFwd = 0, crippled = false, stunned = false, verAim = 0, tipDist = 0, torsoRot = null, playerYaw = 0 } = {}) {
+    animate(dt, { mvSpeed = 0, swinging = false, blocking = false, alive = true, swingLat = 0, swingFwd = 0, crippled = false, stunned = false, verAim = 0, tipDist = 0, torsoRot = null, headRot = null, playerYaw = 0 } = {}) {
       // Shoulder lift on high stance — raises the arm's anchor when aim points up.
       const lift = Math.max(-0.05, Math.min(0.20, verAim * 0.18));
       weaponRig.position.y = armPivotY + lift;
@@ -204,6 +204,16 @@ export function buildCharacter({ color = 0x9aa0a8, accent = 0xc8a97e, isLocal = 
           const lz = -sy * torsoRot.x + cy * torsoRot.z;
           torso.rotation.x += lx * 2.0;     // 2*sin(angle/2) ≈ angle
           torso.rotation.z += lz * 2.0;
+        }
+        // Head physics-driven bob.
+        if (headRot) {
+          const cy = Math.cos(-playerYaw), sy = Math.sin(-playerYaw);
+          const lx =  cy * headRot.x + sy * headRot.z;
+          const lz = -sy * headRot.x + cy * headRot.z;
+          head.rotation.x = lx * 2.0;
+          head.rotation.z = lz * 2.0;
+          helm.rotation.x = lx * 2.0;
+          helm.rotation.z = lz * 2.0;
         }
         torso.position.y = height * 0.55 + Math.sin(phase * 2) * 0.02 * stride;
         // Hips counter-rotate during big swings — exaggerated wind-up feel.

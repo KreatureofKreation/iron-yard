@@ -66,6 +66,7 @@ export class Room {
     this.physics.attachSword(p.id, w.mass, w.length, startTip);
     this.physics.attachBody(p.id, p.pos);
     this.physics.attachTorso(p.id, p.pos);
+    this.physics.attachHead(p.id, p.pos);
   }
 
   removePlayer(id) {
@@ -73,6 +74,7 @@ export class Room {
     this.physics.detachSword(id);
     this.physics.detachBody(id);
     this.physics.detachTorso(id);
+    this.physics.detachHead(id);
     for (const p of this.players.values()) {
       p.lastHitAtMs.delete(id);
       p.parryUntilMs.delete(id);
@@ -213,8 +215,9 @@ export class Room {
         this.physics.setSwordGravity(p.id, false);
         this.physics.driveSword(p.id, p.weaponTipTarget, dt);
       }
-      // Restorative torque on torso (active ragdoll uprighting).
+      // Restorative torque on torso + head (active ragdoll uprighting).
       this.physics.driveTorso(p.id, dt);
+      this.physics.driveHead(p.id, dt);
     }
     this.physics.step();
 
@@ -379,6 +382,7 @@ export class Room {
       if (p.zombieUntilMs > Date.now()) continue;            // skip disconnected awaiting rejoin
       const invulnLeft = Math.max(0, CONFIG.PLAYER.spawnInvulnMs - (Date.now() - p.spawnedAtMs));
       const torsoSt = this.physics.torsoState(p.id);
+      const headSt = this.physics.headState(p.id);
       players.push({
         id: p.id,
         name: p.name,
@@ -404,6 +408,7 @@ export class Room {
         moveSpeed: this.moveSpeedFor(p),
         invulnMs: invulnLeft,
         torsoRot: torsoSt ? torsoSt.rot : null,
+        headRot:  headSt  ? headSt.rot  : null,
       });
     }
     return {
