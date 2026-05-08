@@ -738,6 +738,8 @@ net.on("hit", (m) => {
     statsBump("deaths");
     state.spectatorTargetId = m.from;
     state.spectatorOrbitT = 0;
+    // Death cam — force a tight zoom on the killer for ~1.5 s before resuming orbit.
+    state._deathCamUntil = performance.now() + 1500;
   }
 });
 
@@ -812,11 +814,22 @@ net.on("slam", (m) => {
 });
 
 net.on("wallClash", (m) => {
-  // Sword-vs-wall/pillar clack. Quieter than parry, no shake.
-  SFX.clash(computePan(m.at), Math.min(0.7, 0.3 + m.speed / 30));
-  spark(scene, m.at, 0.18, 0xc8a97e);
+  // Sword-vs-wall clack — bigger spark for hard hits.
+  const intensity = Math.min(1.0, m.speed / 18);
+  SFX.clash(computePan(m.at), 0.4 + intensity * 0.5);
+  spark(scene, m.at, 0.20 + intensity * 0.45, 0xfff0a0);
+  // Shower of sparks on a hard wall hit.
+  if (intensity > 0.4) {
+    for (let i = 0; i < 4; i++) {
+      spark(scene, {
+        x: m.at.x + (Math.random() - 0.5) * 0.15,
+        y: m.at.y + (Math.random() - 0.5) * 0.15,
+        z: m.at.z + (Math.random() - 0.5) * 0.15,
+      }, 0.15 + Math.random() * 0.10, 0xfff0a0);
+    }
+  }
   if (m.id === state.myId) {
-    state.shake.mag = Math.max(state.shake.mag, 0.06);
+    state.shake.mag = Math.max(state.shake.mag, 0.06 + intensity * 0.10);
     state.shake.t = 0;
   }
 });
@@ -1041,12 +1054,21 @@ function frame(t) {
         spark(scene, { x: p.x + (Math.random() - 0.5) * 0.4, y: 0.8 + Math.random() * 0.4, z: p.z + (Math.random() - 0.5) * 0.4 }, 0.12, 0xa01515);
       }
     }
-    // Footsteps when on ground and moving.
+    // Footsteps when on ground and moving — sound + small dirt decal.
     if (state.local.onGround && mvSpeed > 1) {
       state.footstepPhase += dt * (mvSpeed * 0.45 + 1.5);
       if (state.footstepPhase >= Math.PI) {
         state.footstepPhase -= Math.PI;
         SFX.footstep();
+        // Spawn footprint decal on right vs left foot alternately.
+        const sideSign = state._footSide ? 1 : -1; state._footSide = !state._footSide;
+        const fx = -Math.sin(state.local.yaw), fz = -Math.cos(state.local.yaw);
+        const rx =  Math.cos(state.local.yaw), rz = -Math.sin(state.local.yaw);
+        spawnFootprint(scene, {
+          x: state.local.pos.x + rx * sideSign * 0.18,
+          z: state.local.pos.z + rz * sideSign * 0.18,
+          yaw: state.local.yaw,
+        });
       }
     } else {
       state.footstepPhase = 0;
@@ -1114,6 +1136,15 @@ function frame(t) {
       lookTargetPos = target.rig.root.position;
       state.cameraYaw += dt * 0.35;   // slow orbit
     }
+  }
+  // Death cam — pull camera in tight on the killer for the first 1.5s after dying.
+  // After that, restore user-configured cameraDist.
+  if (performance.now() < (state._deathCamUntil || 0)) {
+    state.cameraDist = Math.max(2.4, state.cameraDist - dt * 3.0);
+  } else if (window.IRONYARD_SETTINGS) {
+    // Drift back to user-configured distance after death cam expires.
+    const target = window.IRONYARD_SETTINGS.camdist || 4.2;
+    state.cameraDist += (target - state.cameraDist) * Math.min(1, dt * 1.5);
   }
   // Raycast from target (player chest) to ideal camera position; if a wall/pillar is in
   // the way, pull the camera in to that hit point so we don't see through geometry.
@@ -1183,6 +1214,7 @@ function frame(t) {
   updateNameplates();
   updateDroppedSwordHalos();
   tickFallingProps(dt);
+  tickFootprints(performance.now());
 
   // Lock-hint overlay: visible only after we've joined and pointer isn't locked.
   const hint = document.getElementById("lock-hint");
@@ -1434,6 +1466,44 @@ function tickFallingProps(dt) {
   // Helm physics is now driven by Rapier (see ragdoll.js tickRagdolls). Kept as a
   // no-op so the existing call site in frame() doesn't change.
   void dt;
+}
+
+// Footprint decals — small dark planes that appear at footstep positions and
+// fade over a few seconds. Capped so they can't grow unbounded.
+const _footprints = [];
+const _FOOTPRINT_MAX = 60;
+function spawnFootprint(scene, p) {
+  const geo = new THREE.PlaneGeometry(0.18, 0.30);
+  const mat = new THREE.MeshBasicMaterial({
+    color: 0x1a120a, transparent: true, opacity: 0.45,
+    depthWrite: false,
+  });
+  const m = new THREE.Mesh(geo, mat);
+  m.rotation.x = -Math.PI / 2;
+  m.rotation.z = -p.yaw;
+  m.position.set(p.x, 0.012, p.z);
+  scene.add(m);
+  _footprints.push({ mesh: m, born: performance.now() });
+  if (_footprints.length > _FOOTPRINT_MAX) {
+    const old = _footprints.shift();
+    scene.remove(old.mesh);
+    old.mesh.geometry.dispose();
+    old.mesh.material.dispose();
+  }
+}
+function tickFootprints(now) {
+  for (let i = _footprints.length - 1; i >= 0; i--) {
+    const fp = _footprints[i];
+    const age = (now - fp.born) / 6000;
+    if (age >= 1) {
+      scene.remove(fp.mesh);
+      fp.mesh.geometry.dispose();
+      fp.mesh.material.dispose();
+      _footprints.splice(i, 1);
+    } else {
+      fp.mesh.material.opacity = 0.45 * (1 - age);
+    }
+  }
 }
 
 // Impact flash — expanding billboard ring at the contact point. Brief cinematic thump.
