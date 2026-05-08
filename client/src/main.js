@@ -958,7 +958,10 @@ function frame(t) {
       jump: !!inp.jump,
       blocking: !!inp.block,
       swinging: true,           // always live; server gates on tip speed
-      weaponTip: { x: state.weaponTipWorld.x, y: state.weaponTipWorld.y, z: state.weaponTipWorld.z },
+      // Send the SCRIPTED TARGET (what the attack path wants), NOT the rendered tip.
+      // The rendered tip is mirrored back from the server, so sending it would create
+      // a feedback loop and the spring would have no error to drive.
+      weaponTip: { x: state.weaponTipTarget.x, y: state.weaponTipTarget.y, z: state.weaponTipTarget.z },
     });
   }
 
