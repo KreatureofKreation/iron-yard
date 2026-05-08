@@ -967,10 +967,26 @@ function frame(t) {
     // Track an approximate horizontal velocity for prop-kick + UX hooks.
     state.local.vel.x = mvNX * speed;
     state.local.vel.z = mvNZ * speed;
-    if (inp.jump && state.local.onGround) { state.local.vel.y = 5.5; state.local.onGround = false; }
+    if (inp.jump && state.local.onGround) {
+      state.local.vel.y = 5.5;
+      state.local.onGround = false;
+      state._fellFrom = state.local.pos.y;
+    }
     state.local.vel.y += -18 * dt;
     state.local.pos.y += state.local.vel.y * dt;
-    if (state.local.pos.y <= 0) { state.local.pos.y = 0; state.local.vel.y = 0; state.local.onGround = true; }
+    if (state.local.pos.y <= 0) {
+      const wasAir = !state.local.onGround;
+      state.local.pos.y = 0;
+      state.local.onGround = true;
+      // Landing thud — magnitude scales with downward velocity.
+      if (wasAir && state.local.vel.y < -3.5) {
+        const mag = Math.min(1, -state.local.vel.y / 12);
+        SFX.thud(0);
+        state.shake.mag = Math.max(state.shake.mag, 0.10 + mag * 0.18);
+        state.shake.t = 0;
+      }
+      state.local.vel.y = 0;
+    }
     // Soft arena clamp.
     const half = (RUNTIME.arena.size / 2) - 0.4;
     if (state.local.pos.x < -half) state.local.pos.x = -half;
