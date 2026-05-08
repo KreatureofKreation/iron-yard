@@ -865,7 +865,7 @@ function frame(t) {
 
     // Attack state — start a new attack on edge trigger if no active attack (or the
     // active one is past its 60% mark, so successive clicks chain).
-    if (inp.attackTrigger && (!state.attack || (performance.now() - state.attack.start) > state.attack.duration * 0.60)) {
+    if (inp.attackTrigger) {
       const paths = pathsFor(state.weaponKey);
       const dur = (paths[inp.attackTrigger] ?? ATTACK_PATHS[inp.attackTrigger])?.duration ?? 380;
       // Heavier weapons take longer to arc. Mass scales duration up to ~1.5x.
@@ -874,19 +874,18 @@ function frame(t) {
       state.attack = { type: inp.attackTrigger, start: performance.now(), duration: scaledDur };
     }
 
-    // Compute target weapon tip from attack state (or rest). Send target to server.
-    // Visible local sword is rendered from the SERVER's broadcast tip (physics body
-    // position) so the visible sword and the damage-applying body never diverge.
+    // Compute target weapon tip from attack state (or rest). Send target to server,
+    // and render the local sword toward the scripted target directly (client-side
+    // prediction — keeps input → visual instant). Server stays authoritative for
+    // damage; small visual/damage divergence on heavy weapons is acceptable.
     state.weaponTipPrev.copy(state.weaponTipWorld);
     const mvSpeed = Math.hypot(mvWX, mvWZ) * speed;
     const myGrip = RUNTIME.weapons[state.weaponKey]?.grip || "one-hand";
     computeAttackTipTarget(state, state.local.pos, state.local.yaw, mvSpeed, state.weaponKey, myGrip, state.weaponTipTarget);
-    // Render-side: lerp toward server-authoritative tip (falling back to scripted target
-    // before the first snapshot arrives). Heavier weapons converge slower for weight feel.
     const wMass = RUNTIME.weapon.mass || 1.0;
-    const k = Math.min(1, dt * (22 / wMass));
-    const renderSrc = state._serverTip || state.weaponTipTarget;
-    state.weaponTipWorld.lerp(renderSrc, k);
+    // Heavier weapons lag the target more — feels weighty.
+    const k = Math.min(1, dt * (14 / wMass));
+    state.weaponTipWorld.lerp(state.weaponTipTarget, k);
     state.weaponTipVel.subVectors(state.weaponTipWorld, state.weaponTipPrev).divideScalar(Math.max(dt, 1 / 240));
 
     // Pose rig.

@@ -232,13 +232,11 @@ export class PhysicsWorld {
     const v = sw.body.linvel();
     const wMass = sw.weaponMass;
     const bodyMass = sw.body.mass() || wMass;        // Rapier-computed mass
-    // k = stiffness, d = damping. Inverse-mass on stiffness so heavier feels heavier.
-    // Higher stiffness → sword body tracks the scripted target tightly so the visible
-    // sword and the damage-applying physics body don't diverge during a swing. Mass
-    // scaling still gives heavier weapons a heavier feel because their bodies are
-    // physically heavier and respond slower to the same impulse.
-    const k = 900 / wMass;
-    const d = 22;
+    // k = stiffness, d = damping. With timestep 1/30 the explicit-Euler spring is
+    // only stable while dt*sqrt(k_code) < ~0.5, so k_code can't be too large. Heavier
+    // weapons get a smaller k_code (more lag = more weight feel).
+    const k = 380 / wMass;
+    const d = 18;
     const ax = (target.x - t.x) * k - v.x * d;
     const ay = (target.y - t.y) * k - v.y * d;
     const az = (target.z - t.z) * k - v.z * d;
