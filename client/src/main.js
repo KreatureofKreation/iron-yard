@@ -128,12 +128,24 @@ function shoulderWorld(pos, yaw, out = new THREE.Vector3()) {
 // Player-local coords: x=right, y=up, z=forward. The actual sword body is driven by
 // the server's spring toward these targets, so heavier weapons still feel heavy.
 //
-// Vom Tag = rest. Hands at right-shoulder height, tip up and slightly behind shoulder.
-const REST_LOCAL_BASE = { x: 0.30, y: 2.00, z: -0.10 };
+// Rest pose varies by grip:
+//   two-hand / one-hand: Vom Tag — tip up + slightly back over right shoulder
+//   sword+shield:        Iron-Thorn High Guard — tip behind right shoulder, more compact
+const REST_BY_GRIP = {
+  "two-hand":  { x: 0.30, y: 2.00, z: -0.10 },
+  "one-hand":  { x: 0.30, y: 2.00, z: -0.10 },
+  "shield":    { x: 0.40, y: 1.95, z: -0.15 },
+};
+const REST_LOCAL_BASE = REST_BY_GRIP["one-hand"];
+
+function restBaseForGrip(grip) {
+  return REST_BY_GRIP[grip] || REST_BY_GRIP["one-hand"];
+}
 
 // Idle / breathing sway for the rest pose so the sword never feels glued in place.
 // mvSpeed bumps stride amplitude.
-function restLocal(now, mvSpeed = 0) {
+function restLocal(now, mvSpeed = 0, grip = "one-hand") {
+  const base = restBaseForGrip(grip);
   const t = now / 1000;
   const breath = Math.sin(t * 1.3) * 0.04;
   const sway   = Math.sin(t * 0.85 + 0.7) * 0.05;
@@ -141,9 +153,9 @@ function restLocal(now, mvSpeed = 0) {
   const bob    = Math.sin(t * (4 + mvSpeed * 1.2)) * 0.08 * walk;
   const stride = Math.sin(t * (2 + mvSpeed * 0.6)) * 0.06 * walk;
   return {
-    x: REST_LOCAL_BASE.x + sway + stride,
-    y: REST_LOCAL_BASE.y + breath + bob,
-    z: REST_LOCAL_BASE.z + Math.cos(t * 0.85 + 0.7) * 0.06 + stride * 0.4,
+    x: base.x + sway + stride,
+    y: base.y + breath + bob,
+    z: base.z + Math.cos(t * 0.85 + 0.7) * 0.06 + stride * 0.4,
   };
 }
 
@@ -227,9 +239,9 @@ function localToWorld(pos, yaw, local, out = new THREE.Vector3()) {
 }
 
 // Resolve the current weapon-tip target this frame from attack state (or breathing rest).
-function computeAttackTipTarget(state, pos, yaw, mvSpeed, out) {
+function computeAttackTipTarget(state, pos, yaw, mvSpeed, grip, out) {
   const now = performance.now();
-  let local = restLocal(now, mvSpeed);
+  let local = restLocal(now, mvSpeed, grip);
   if (state.attack && state.attack.type) {
     const elapsed = now - state.attack.start;
     const t = elapsed / state.attack.duration;
@@ -746,7 +758,8 @@ function frame(t) {
     // toward it with mass-dependent rate (heavier = more lag = more weight).
     state.weaponTipPrev.copy(state.weaponTipWorld);
     const mvSpeed = Math.hypot(mvWX, mvWZ) * speed;
-    computeAttackTipTarget(state, state.local.pos, state.local.yaw, mvSpeed, state.weaponTipTarget);
+    const myGrip = RUNTIME.weapons[state.weaponKey]?.grip || "one-hand";
+    computeAttackTipTarget(state, state.local.pos, state.local.yaw, mvSpeed, myGrip, state.weaponTipTarget);
     const wMass = RUNTIME.weapon.mass || 1.0;
     const k = Math.min(1, dt * (12 / wMass));
     state.weaponTipWorld.lerp(state.weaponTipTarget, k);

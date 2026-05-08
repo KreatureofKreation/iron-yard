@@ -356,10 +356,12 @@ export function buildCharacter({ color = 0x9aa0a8, accent = 0xc8a97e, isLocal = 
           armL.rotation.z =  0.15;
           elbowL.rotation.x = 0.6;
         } else if (grip === "shield") {
-          armL.rotation.x = -0.4;
-          armL.rotation.y =  0.0;
-          armL.rotation.z = -0.15;
-          elbowL.rotation.x = 0.7;
+          // Iron-Thorn middle-guard default: shield extended forward at mid-torso
+          // height, "decent gap from the body". Elbow tucked so face is covered.
+          armL.rotation.x = -0.55;
+          armL.rotation.y = -0.18;
+          armL.rotation.z = -0.10;
+          elbowL.rotation.x = 0.85;
         } else {
           armL.rotation.x = -Math.sin(phase) * 0.5 * stride;
           armL.rotation.y = 0;
@@ -425,8 +427,17 @@ export function buildCharacter({ color = 0x9aa0a8, accent = 0xc8a97e, isLocal = 
 
         if (blocking) {
           torso.rotation.x += 0.10;
-          armL.rotation.x = 0.6;
-          elbowL.rotation.x = 0.9;
+          if (grip === "shield") {
+            // High Guard — shield raised covering face/upper chest, body slightly turned
+            // shield-side-forward so the shield is the primary line of defense.
+            armL.rotation.x = -1.10;
+            armL.rotation.y = -0.45;
+            armL.rotation.z = -0.10;
+            elbowL.rotation.x = 1.20;
+          } else {
+            armL.rotation.x = 0.6;
+            elbowL.rotation.x = 0.9;
+          }
         }
       } else {
         // Death pose — slumped.
