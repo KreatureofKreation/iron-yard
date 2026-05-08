@@ -758,7 +758,11 @@ net.on("streak", (m) => {
     : m.count >= 5 ? "BLOODBATH"
     : "TRIPLE KILL";
   HUD.killFeed(`★ ${tag} · ${who} (${m.count})`);
-  if (m.id === state.myId) SFX.fanfare();
+  if (m.id === state.myId) {
+    SFX.fanfare();
+    state._streakLevel = m.count;
+    state._streakUntil = performance.now() + 12000;       // glow for 12 s after streak hit
+  }
 });
 
 net.on("sever", (m) => {
@@ -1068,6 +1072,23 @@ function frame(t) {
     });
     state.rig.setInvuln((state.local.invulnMs || 0) > 0, performance.now() / 1000);
     state.rig.pushTrail(state.weaponTipWorld, state.weaponTipVel.length());
+
+    // Kill-streak sword glow — pulsing blue/white emissive on metallic blade parts.
+    const streakActive = performance.now() < (state._streakUntil || 0);
+    if (state.rig?.sword) {
+      const t = performance.now() / 120;
+      const pulse = streakActive ? (0.35 + 0.20 * Math.sin(t)) : 0;
+      const lvl = (state._streakLevel || 3);
+      // Color shifts hot for higher streaks (bloodbath+ → gold-orange).
+      const r = lvl >= 7 ? pulse * 1.0 : pulse * 0.4;
+      const g = lvl >= 5 ? pulse * 0.8 : pulse * 0.7;
+      const b = lvl >= 7 ? pulse * 0.3 : pulse * 1.0;
+      state.rig.sword.traverse((o) => {
+        if (o.isMesh && o.material && o.material.metalness > 0.5 && o.material.emissive) {
+          o.material.emissive.setRGB(r, g, b);
+        }
+      });
+    }
 
     // Bleed drip for local player.
     if ((state.local.bleedMsLeft || 0) > 0) {
