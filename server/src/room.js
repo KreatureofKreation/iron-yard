@@ -422,6 +422,7 @@ export class Room {
         bleedMsLeft:   Math.max(0, p.bleedUntilMs   - Date.now()),
         disarmedMsLeft:Math.max(0, p.disarmedUntilMs- Date.now()),
         knockedMsLeft: Math.max(0, p.knockedDownUntilMs - Date.now()),
+        commitMsLeft:  Math.max(0, (p.commitStrikeUntilMs || 0) - Date.now()),
         alive: p.alive,
         weaponTip: p.weaponTip,
         swinging: p.swinging,

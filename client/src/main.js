@@ -265,6 +265,7 @@ net.on("snap", (m) => {
       state.local.bleedMsLeft = p.bleedMsLeft || 0;
       state.local.torsoRot = p.torsoRot || null;
       state.local.headRot  = p.headRot  || null;
+      state.local.commitMsLeft = p.commitMsLeft || 0;
       state._myScore = p.score || 0;
       state._myDeaths = p.deaths || 0;
       HUD.setHp(p.hp, RUNTIME.player.hp);
@@ -1024,6 +1025,7 @@ function spark(scene, at, scale = 0.3, color = 0xff8050) {
 }
 
 function stanceLabel(inp) {
+  if ((state.local.commitMsLeft || 0) > 0) return "★ COMMIT ★";
   if (inp.block) return "— guard —";
   const m = Math.hypot(inp.aim.x, inp.aim.y);
   if (m > 0.85) return "— full extension —";
