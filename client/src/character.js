@@ -6,7 +6,7 @@ import { RUNTIME } from "./config.js";
 //
 // External interface (must stay stable for main.js + ragdoll handoff):
 //   { root, weaponRig, sword, tipNode, trail, trailGeo, trailMat, trailPts, trailState,
-//     parts: { torso, head, helm, legL, legR, armL, weaponRig, hips, cloak },
+//     parts: { torso, head, helm, legL, legR, armL, weaponRig, hips },
 //     animate(...), setLean(...), setSeveredLeg(...), pushTrail(...), setInvuln(...) }
 export function buildCharacter({ color = 0x9aa0a8, accent = 0xc8a97e, isLocal = false, weaponKey = "arming", grip = "one-hand" } = {}) {
   const root = new THREE.Group();
@@ -15,7 +15,6 @@ export function buildCharacter({ color = 0x9aa0a8, accent = 0xc8a97e, isLocal = 
   const skinMat   = new THREE.MeshStandardMaterial({ color: 0xc8997a, roughness: 0.9 });
   const plateMat  = new THREE.MeshStandardMaterial({ color, roughness: 0.45, metalness: 0.55 });
   const platePale = new THREE.MeshStandardMaterial({ color, roughness: 0.55, metalness: 0.45 });
-  const cloakMat  = new THREE.MeshStandardMaterial({ color: accent, roughness: 0.85 });
   const leatherMat = new THREE.MeshStandardMaterial({ color: 0x2a1c12, roughness: 0.95 });
   const mailMat   = new THREE.MeshStandardMaterial({ color: 0x4a4a52, roughness: 0.55, metalness: 0.7 });
   const goldMat   = new THREE.MeshStandardMaterial({ color: 0x9a7a3a, metalness: 0.7, roughness: 0.4 });
@@ -91,7 +90,7 @@ export function buildCharacter({ color = 0x9aa0a8, accent = 0xc8a97e, isLocal = 
   const legR = buildLeg("R");
   root.add(legL.thigh, legR.thigh);
 
-  // ---------- Torso (chest + abdomen + back + cloak) ----------
+  // ---------- Torso (chest + abdomen + back) ----------
   const abdomen = new THREE.Mesh(new THREE.CylinderGeometry(radius * 0.72, radius * 0.78, height * 0.12, 14), mailMat);
   abdomen.position.y = Y_ABDOMEN; abdomen.castShadow = true; root.add(abdomen);
   // Chest plate — slightly taller cylinder, wider at top
@@ -106,14 +105,7 @@ export function buildCharacter({ color = 0x9aa0a8, accent = 0xc8a97e, isLocal = 
   gorget.position.y = Y_SHOULDER - height * 0.03;
   root.add(gorget);
 
-  // Cloak — apex hangs down at thigh, base is the drape collar at upper back.
-  const cloakH = height * 0.55;
-  const cloak = new THREE.Mesh(new THREE.ConeGeometry(radius * 1.05, cloakH, 12, 1, true), cloakMat);
-  cloak.material.side = THREE.DoubleSide;
-  cloak.rotation.x = Math.PI;                  // flip so apex points DOWN
-  // After flip, base (wider end) is at +cloakH/2 in local; place so base sits at shoulder.
-  cloak.position.set(0, Y_SHOULDER - cloakH / 2 - 0.02, -radius * 0.45);
-  root.add(cloak);
+  // (cloak removed — looked like a spike when seen from front)
 
   // Pauldrons (shoulder caps).
   const pauldronGeo = new THREE.SphereGeometry(radius * 0.42, 14, 10, 0, Math.PI * 2, 0, Math.PI / 2);
@@ -313,7 +305,7 @@ export function buildCharacter({ color = 0x9aa0a8, accent = 0xc8a97e, isLocal = 
 
   return {
     root, weaponRig, sword, tipNode, trail, trailGeo, trailMat, trailPts, trailState,
-    parts: { torso, head, helm, legL: legLGroup, legR: legRGroup, armL: armLGroup, weaponRig, hips: pelvis, cloak },
+    parts: { torso, head, helm, legL: legLGroup, legR: legRGroup, armL: armLGroup, weaponRig, hips: pelvis },
 
     animate(dt, { mvSpeed = 0, swinging = false, blocking = false, alive = true, swingLat = 0, swingFwd = 0, crippled = false, stunned = false, verAim = 0, tipDist = 0, torsoRot = null, headRot = null, playerYaw = 0 } = {}) {
       // Shoulder lift on high stance — raises the right shoulder when aim is up.
@@ -470,7 +462,7 @@ export function buildCharacter({ color = 0x9aa0a8, accent = 0xc8a97e, isLocal = 
       const transparent = active;
       // Iterate only meshes (skip Groups). Pulse all visible body meshes.
       const meshes = [
-        torso, abdomen, pelvis, gorget, neck, head, cloak,
+        torso, abdomen, pelvis, gorget, neck, head,
         helmDome, visor, slit, rim,
         upperArmLMesh, forearmLMesh, handLMesh, couterL, pauldronL,
         upperArmRMesh, forearmRMesh, handRMesh, couterR, pauldronR,
