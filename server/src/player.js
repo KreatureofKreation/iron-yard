@@ -145,6 +145,22 @@ export function applyInput(p, input, dtMs) {
   // Tip velocity for damage purposes EXCLUDES the player's own velocity (translation +
   // jump), so running or jumping doesn't look like a swing. A teleport-sized delta is
   // treated as zero velocity (post-respawn or initial frame).
+  // While blocking, override the tip to a high-guard defensive position (arm raised
+  // across the body, blade horizontal in front). Combines with sword-physics drag for
+  // a visible "guard up" stance.
+  if (canBlock && input.weaponTip) {
+    const fx = -Math.sin(p.yaw), fz = -Math.cos(p.yaw);
+    const rx =  Math.cos(p.yaw), rz = -Math.sin(p.yaw);
+    input = {
+      ...input,
+      weaponTip: {
+        x: p.pos.x + fx * 0.7 + rx * 0.25,
+        y: p.pos.y + 1.55,
+        z: p.pos.z + fz * 0.7 + rz * 0.25,
+      },
+    };
+  }
+
   if (input.weaponTip) {
     p.weaponTipPrev = p.weaponTip;
     // Clamp tip to plausible reach from player. Max = weapon length + 0.7m arm + 0.5m fudge.
