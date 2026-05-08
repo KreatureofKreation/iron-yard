@@ -677,6 +677,13 @@ net.on("hit", (m) => {
   }
   if (m.kill) {
     SFX.death();
+    // Blood pool decal on the ground at victim's feet — survives until round end.
+    if (m.at) {
+      const victim = m.to === state.myId ? state.local.pos : state.remotes.get(m.to)?.rig?.root?.position;
+      const px = victim ? victim.x : m.at.x;
+      const pz = victim ? victim.z : m.at.z;
+      spawnBloodPool(scene, px, pz);
+    }
     const a = nameFor(m.from);
     const b = nameFor(m.to);
     const wpn = m.weapon ? `(${m.weapon})` : "";
@@ -899,6 +906,7 @@ net.on("matchStart", (m) => {
   HUD.hideBanner();
   HUD.showBanner(`<div>ROUND ${m.round} · BEGIN</div>`, 1500);
   HUD.killFeed("— new round —");
+  clearBloodPools();
 });
 net.on("join",  (m) => HUD.log(`${m.player.name} joined`));
 net.on("leave", (m) => {
@@ -1466,6 +1474,37 @@ function tickFallingProps(dt) {
   // Helm physics is now driven by Rapier (see ragdoll.js tickRagdolls). Kept as a
   // no-op so the existing call site in frame() doesn't change.
   void dt;
+}
+
+// Blood pool decal — dark red splat where someone died. Capped + cleared on round end.
+const _bloodPools = [];
+function spawnBloodPool(scene, x, z) {
+  const radius = 0.35 + Math.random() * 0.15;
+  const geo = new THREE.CircleGeometry(radius, 18);
+  const mat = new THREE.MeshBasicMaterial({
+    color: 0x4a0808, transparent: true, opacity: 0.75,
+    depthWrite: false,
+  });
+  const m = new THREE.Mesh(geo, mat);
+  m.rotation.x = -Math.PI / 2;
+  m.position.set(x, 0.014, z);
+  scene.add(m);
+  _bloodPools.push(m);
+  // Cap at 24 pools so the floor doesn't drown.
+  while (_bloodPools.length > 24) {
+    const old = _bloodPools.shift();
+    scene.remove(old);
+    old.geometry.dispose();
+    old.material.dispose();
+  }
+}
+function clearBloodPools() {
+  for (const m of _bloodPools) {
+    scene.remove(m);
+    m.geometry.dispose();
+    m.material.dispose();
+  }
+  _bloodPools.length = 0;
 }
 
 // Footprint decals — small dark planes that appear at footstep positions and

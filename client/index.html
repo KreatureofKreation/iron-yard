@@ -67,7 +67,14 @@
       #hp .lbl { font-size:.8rem; color:#bbb; margin-bottom:.2rem; display:flex; justify-content:space-between; }
       #hp .stamina-bar { height:8px; background:#222; border:1px solid #333; border-radius:2px; overflow:hidden; margin-top:4px; }
       #hp .stamina-fill { height:100%; background:linear-gradient(90deg,#3a6a8a,#6cb1d8); width:100%; transition:width .12s; }
-      #hp .stamina-fill.low { background:linear-gradient(90deg,#7a5a2a,#d8a050); }
+      #hp .stamina-fill.low {
+        background:linear-gradient(90deg,#7a5a2a,#d8a050);
+        animation: sta-low-pulse 0.6s ease-in-out infinite alternate;
+      }
+      @keyframes sta-low-pulse {
+        from { box-shadow: 0 0 4px rgba(216, 160, 80, 0.4); }
+        to   { box-shadow: 0 0 14px rgba(216, 160, 80, 0.95); }
+      }
       #scoreboard {
         position:absolute; right:1rem; top:1rem; background:rgba(0,0,0,0.55);
         border:1px solid #333; padding:.4rem .6rem; border-radius:4px; font-size:.85rem; min-width:180px;
