@@ -178,7 +178,15 @@ export function botInput(bot, players, nowMs, racks = null) {
     mv.y = -0.7;                                        // back off
     mv.x = ((bot.id % 2) ? 1 : -1) * 0.4;
   } else {
-    mv.x = Math.sin(nowMs / 700 + bot.id) * 0.6;        // in range — strafe
+    // In range — circle-strafe target. Pick a direction, hold for a few seconds,
+    // then maybe switch. Reads as deliberate footwork instead of a sine wobble.
+    if (!bot._circleDir || (bot._circleSwitchMs || 0) < nowMs) {
+      bot._circleDir = Math.random() < 0.5 ? 1 : -1;
+      bot._circleSwitchMs = nowMs + 1800 + Math.random() * 2200;
+    }
+    mv.x = bot._circleDir * 0.75;
+    // Drift slightly in/out of range while circling so range never settles into a stalemate.
+    mv.y = dist > engage * 1.05 ? 0.30 : (dist < engage * 0.85 ? -0.20 : 0);
   }
 
   // Unstick: if not progressing for several samples, jitter sideways. If VERY stuck,
