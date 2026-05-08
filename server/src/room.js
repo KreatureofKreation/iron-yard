@@ -222,6 +222,14 @@ export class Room {
         this.physics.driveTorso(p.id, dt);
         this.physics.driveHead(p.id, dt);
       }
+      // Footstep bob: vertical sinewave impulse to torso when moving on ground.
+      const horizSpeed = Math.hypot(p.vel.x, p.vel.z);
+      if (!knocked && !dead && p.onGround && horizSpeed > 0.5) {
+        const stepHz = 1.5 + horizSpeed * 0.3;
+        const phase  = (this.tick * dt * stepHz * Math.PI * 2) + (p.id * 0.7);
+        const bob    = Math.sin(phase) * Math.min(1.5, horizSpeed * 0.4);
+        this.physics.pushTorso(p.id, { x: 0, y: bob * 0.06, z: 0 });
+      }
     }
     this.physics.step();
 

@@ -432,6 +432,13 @@ net.on("streak", (m) => {
   if (m.id === state.myId) SFX.fanfare();
 });
 
+net.on("knockdown", (m) => {
+  const pan = computePan(m.at);
+  SFX.thud(pan);
+  spark(scene, m.at, 0.5, 0xa07050);
+  if (m.id === state.myId) state.shake.mag = Math.max(state.shake.mag, 0.45);
+});
+
 net.on("bleed", (m) => {
   if (m.at) {
     spark(scene, m.at, 0.18, 0xa01515);

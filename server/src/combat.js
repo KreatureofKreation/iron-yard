@@ -113,6 +113,7 @@ export function resolveHits(players, nowMs, physics) {
         const dir = norm(sub(t.pos, a.pos));
         physics.pushTorso(t.id, { x: dir.x * 8, y: 2, z: dir.z * 8 });
       }
+      events.push({ kind: "knockdown", id: t.id, at: { x: t.pos.x, y: t.pos.y, z: t.pos.z } });
     }
 
     // Knockback impulse (separate channel from movement vel).

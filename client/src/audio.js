@@ -128,6 +128,29 @@ export function clash(pan = 0) {
   o2.start(t0); o2.stop(t0 + 0.22);
 }
 
+// Heavy body thud — used on knockdown.
+export function thud(pan = 0) {
+  if (!unlocked) return;
+  ensureCtx(); if (!ctx) return;
+  const out = panned(pan);
+  const t0 = ctx.currentTime;
+  const o = ctx.createOscillator();
+  o.type = "sine";
+  o.frequency.setValueAtTime(90, t0);
+  o.frequency.exponentialRampToValueAtTime(38, t0 + 0.32);
+  const e = envGain(t0, 0.005, 0.40, 0.55);
+  o.connect(e).connect(out);
+  o.start(t0); o.stop(t0 + 0.45);
+
+  const n = ctx.createBufferSource();
+  n.buffer = noiseBuffer(140);
+  const f = ctx.createBiquadFilter();
+  f.type = "lowpass"; f.frequency.value = 250;
+  const en = envGain(t0, 0.002, 0.18, 0.30);
+  n.connect(f).connect(en).connect(out);
+  n.start(t0); n.stop(t0 + 0.20);
+}
+
 // Helm ricochet — bright metallic ping sweep, distinct from clash.
 export function ricochet(pan = 0) {
   if (!unlocked) return;
