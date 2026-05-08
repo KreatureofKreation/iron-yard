@@ -36,33 +36,41 @@ export const CONFIG = {
   WEAPONS: {
     arming: {
       key: "arming", name: "arming sword", grip: "one-hand",
-      length: 1.10, mass: 1.10, edgeHalfWidth: 0.04,
-      minSpeed: 4.0, speedScale: 4.0, maxDmg: 45, minDmg: 6,
-      hitCooldownMs: 350, swingMass: 1.0,
-      damageType: "slash",     // applies bleed
+      length: 1.10, mass: 2.20, edgeHalfWidth: 0.04,
+      minSpeed: 3.5, speedScale: 5.0, maxDmg: 55, minDmg: 8,
+      hitCooldownMs: 500, swingMass: 1.0,
+      damageType: "slash",
     },
     longsword: {
       key: "longsword", name: "longsword", grip: "two-hand",
-      length: 1.30, mass: 1.50, edgeHalfWidth: 0.045,
-      minSpeed: 3.5, speedScale: 4.5, maxDmg: 60, minDmg: 9,
-      hitCooldownMs: 450, swingMass: 1.4,
+      length: 1.30, mass: 3.10, edgeHalfWidth: 0.045,
+      minSpeed: 3.0, speedScale: 6.0, maxDmg: 75, minDmg: 12,
+      hitCooldownMs: 650, swingMass: 1.4,
       damageType: "slash",
     },
     mace: {
       key: "mace", name: "mace", grip: "one-hand",
-      length: 0.80, mass: 1.40, edgeHalfWidth: 0.07,
-      minSpeed: 3.0, speedScale: 5.5, maxDmg: 70, minDmg: 12,
-      hitCooldownMs: 500, swingMass: 1.5,
+      length: 0.80, mass: 2.80, edgeHalfWidth: 0.07,
+      minSpeed: 2.8, speedScale: 7.0, maxDmg: 90, minDmg: 16,
+      hitCooldownMs: 700, swingMass: 1.5,
       blunt: true,
-      damageType: "blunt",     // applies stun
+      damageType: "blunt",
     },
     spear: {
       key: "spear", name: "spear", grip: "two-hand",
-      length: 2.10, mass: 1.20, edgeHalfWidth: 0.035,
-      minSpeed: 5.0, speedScale: 5.5, maxDmg: 55, minDmg: 8,
-      hitCooldownMs: 400, swingMass: 1.2,
+      length: 2.10, mass: 2.40, edgeHalfWidth: 0.035,
+      minSpeed: 4.0, speedScale: 6.5, maxDmg: 70, minDmg: 10,
+      hitCooldownMs: 550, swingMass: 1.2,
       thrustBonus: true,
-      damageType: "pierce",    // applies bleed
+      damageType: "pierce",
+    },
+    swordshield: {
+      key: "swordshield", name: "sword + shield", grip: "shield",
+      length: 1.05, mass: 2.10, edgeHalfWidth: 0.04,
+      minSpeed: 3.5, speedScale: 4.5, maxDmg: 50, minDmg: 8,
+      hitCooldownMs: 500, swingMass: 1.0,
+      damageType: "slash",
+      shieldBonus: true,                     // extra +20% block reduction
     },
   },
   // Match/round.

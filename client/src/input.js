@@ -266,9 +266,10 @@ export class Input {
       this.aim.y *= 0.85;
     } else if (this._pointerLocked) {
       // Locked desktop: aim virtual position is updated in mousemove (delta-based).
-      // Sword holds position when mouse is still — like Half Sword's stance.
-      this.aim.x = this._aimVirtX;
-      this.aim.y = this._aimVirtY;
+      // Smooth toward virt with a low-pass so jerky mouse motion doesn't snap the sword.
+      const k = Math.min(1, dt * 14);
+      this.aim.x += (this._aimVirtX - this.aim.x) * k;
+      this.aim.y += (this._aimVirtY - this.aim.y) * k;
     } else {
       // Pre-lock fallback (menu / first frames): mouse-position aim.
       const sens = ((window.IRONYARD_SETTINGS && window.IRONYARD_SETTINGS.sens) || 60) / 100;

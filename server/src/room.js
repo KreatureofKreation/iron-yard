@@ -285,11 +285,12 @@ export class Room {
       }
     }
 
-    // Respawn dead. After respawn, reset sword to player's hand area.
+    // Respawn dead. After respawn, reset sword + torso/head to player's hand area.
     for (const p of this.players.values()) {
       if (!p.alive) {
         if (maybeRespawn(p, this.nextSpawn(), now)) {
           this.physics.resetSwordPos(p.id, { x: p.pos.x, y: p.pos.y + 1.4, z: p.pos.z });
+          this.physics.resetRagPos(p.id, p.pos);
         }
       }
     }
@@ -380,6 +381,8 @@ export class Room {
           p.alive = false; p.deadAtMs = 0;
           p.helmIntact = true;
           p.killStreak = 0;
+          p.roundDamage = 0;
+          p.severedLeg = false;
         }
         this.matchPhase = "countdown";
         this.phaseUntil = now + CONFIG.MATCH.countdownMs;
@@ -396,9 +399,15 @@ export class Room {
     this.winReason = reason;
     this.phaseUntil = now + CONFIG.MATCH.intermissionMs;
     const winnerScore = winnerId != null ? (this.players.get(winnerId)?.score ?? 0) : 0;
+    // MVP = highest roundDamage.
+    let mvpId = null, mvpDmg = 0, mvpName = null;
+    for (const p of this.players.values()) {
+      if ((p.roundDamage || 0) > mvpDmg) { mvpDmg = p.roundDamage; mvpId = p.id; mvpName = p.name; }
+    }
     this.pendingHits.push({
       kind: "matchEnd",
       winner: winnerId, score: winnerScore, reason, round: this.roundIndex,
+      mvp: mvpId ? { id: mvpId, name: mvpName, dmg: mvpDmg } : null,
     });
   }
 
@@ -422,6 +431,7 @@ export class Room {
         hp: p.hp,
         stamina: p.stamina,
         helmIntact: p.helmIntact,
+        severedLeg: !!p.severedLeg,
         crippleMsLeft: Math.max(0, p.crippledUntilMs - Date.now()),
         stunMsLeft:    Math.max(0, p.stunUntilMs    - Date.now()),
         bleedMsLeft:   Math.max(0, p.bleedUntilMs   - Date.now()),

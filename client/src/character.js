@@ -3,7 +3,7 @@ import { RUNTIME } from "./config.js";
 
 // Stylized humanoid. Right arm is `weaponRig` and is what we orient toward weapon tip.
 // Includes legs/arms that we bob during walk + idle sway.
-export function buildCharacter({ color = 0x9aa0a8, accent = 0xc8a97e, isLocal = false, weaponKey = "arming" } = {}) {
+export function buildCharacter({ color = 0x9aa0a8, accent = 0xc8a97e, isLocal = false, weaponKey = "arming", grip = "one-hand" } = {}) {
   const root = new THREE.Group();
   root.name = "character";
 
@@ -49,6 +49,35 @@ export function buildCharacter({ color = 0x9aa0a8, accent = 0xc8a97e, isLocal = 
   const armL = new THREE.Group(); armL.position.set(-radius * 0.85, armPivotY, 0);
   const armLMesh = new THREE.Mesh(armGeo, armorMat); armLMesh.position.y = -height * 0.20; armLMesh.castShadow = true;
   armL.add(armLMesh);
+  const handLMesh = new THREE.Mesh(new THREE.BoxGeometry(radius * 0.30, radius * 0.20, radius * 0.30), skinMat);
+  handLMesh.position.y = -height * 0.40;
+  armL.add(handLMesh);
+
+  // Shield mesh on the left forearm for shield-grip weapons.
+  let shieldMesh = null;
+  if (grip === "shield") {
+    const shMat = new THREE.MeshStandardMaterial({ color: 0x553a22, roughness: 0.85, metalness: 0.2 });
+    shieldMesh = new THREE.Mesh(new THREE.CylinderGeometry(0.36, 0.36, 0.06, 18), shMat);
+    shieldMesh.rotation.x = Math.PI / 2;
+    shieldMesh.position.y = -height * 0.30;
+    shieldMesh.position.z = -0.18;
+    shieldMesh.position.x = -0.05;
+    armL.add(shieldMesh);
+    const rim = new THREE.Mesh(
+      new THREE.TorusGeometry(0.36, 0.025, 8, 24),
+      new THREE.MeshStandardMaterial({ color: 0x9a7a3a, metalness: 0.7, roughness: 0.5 }),
+    );
+    rim.rotation.x = Math.PI / 2;
+    rim.position.copy(shieldMesh.position);
+    armL.add(rim);
+    const boss = new THREE.Mesh(
+      new THREE.IcosahedronGeometry(0.10, 1),
+      new THREE.MeshStandardMaterial({ color: 0xbcc1cc, metalness: 0.7, roughness: 0.4 }),
+    );
+    boss.position.copy(shieldMesh.position);
+    boss.position.z -= 0.04;
+    armL.add(boss);
+  }
   root.add(armL);
 
   // Right arm: shoulder pivot → upper-arm → elbow pivot → forearm → hand → sword.
@@ -165,7 +194,21 @@ export function buildCharacter({ color = 0x9aa0a8, accent = 0xc8a97e, isLocal = 
         const phase = anim.walkPhase;
         legL.rotation.x =  Math.sin(phase) * 0.7 * stride;
         legR.rotation.x = -Math.sin(phase) * 0.7 * stride;
-        armL.rotation.x = -Math.sin(phase) * 0.5 * stride;
+        if (grip === "two-hand") {
+          // Left arm reaches forward across body to grip the weapon.
+          armL.rotation.x = -1.0;
+          armL.rotation.y =  0.7;
+          armL.rotation.z =  0.15;
+        } else if (grip === "shield") {
+          // Left arm slightly raised holding shield in front.
+          armL.rotation.x = -0.4;
+          armL.rotation.y =  0.0;
+          armL.rotation.z = -0.15;
+        } else {
+          armL.rotation.x = -Math.sin(phase) * 0.5 * stride;
+          armL.rotation.y = 0;
+          armL.rotation.z = 0;
+        }
         if (crippled) {
           legR.rotation.x = Math.max(-0.2, legR.rotation.x);
           legR.rotation.z = 0.25;
@@ -239,6 +282,9 @@ export function buildCharacter({ color = 0x9aa0a8, accent = 0xc8a97e, isLocal = 
       }
     },
     setLean(x, z) { torso.rotation.z = x * 0.15; torso.rotation.x = z * 0.15; },
+    setSeveredLeg(severed) {
+      legR.visible = !severed;
+    },
     // Push tip world position into trail. tipSpeed scales opacity.
     pushTrail(tipWorld, tipSpeed = 0) {
       // Convert tip from world to root-local space (root is the character group).
@@ -276,10 +322,11 @@ export function buildCharacter({ color = 0x9aa0a8, accent = 0xc8a97e, isLocal = 
 // Visual proportions tuned to look chunky/readable at the third-person camera distance.
 // blade thickness/width pumped up vs. realism for clarity on screen.
 const WEAPON_VISUAL = {
-  arming:    { gripLen: 0.20, bladeLen: 0.95, bladeW: 0.075, bladeT: 0.022, guardW: 0.30, head: "blade", color: 0xdfe5ee },
-  longsword: { gripLen: 0.34, bladeLen: 1.05, bladeW: 0.075, bladeT: 0.024, guardW: 0.36, head: "blade", color: 0xdfe5ee },
-  mace:      { gripLen: 0.60, bladeLen: 0.28, bladeW: 0.14,  bladeT: 0.14,  guardW: 0.12, head: "ball",  color: 0x9a7a3a },
-  spear:     { gripLen: 1.90, bladeLen: 0.28, bladeW: 0.05,  bladeT: 0.05,  guardW: 0.0,  head: "spear", color: 0xdfe5ee },
+  arming:      { gripLen: 0.20, bladeLen: 0.95, bladeW: 0.075, bladeT: 0.022, guardW: 0.30, head: "blade", color: 0xdfe5ee },
+  longsword:   { gripLen: 0.34, bladeLen: 1.05, bladeW: 0.075, bladeT: 0.024, guardW: 0.36, head: "blade", color: 0xdfe5ee },
+  mace:        { gripLen: 0.60, bladeLen: 0.28, bladeW: 0.14,  bladeT: 0.14,  guardW: 0.12, head: "ball",  color: 0x9a7a3a },
+  spear:       { gripLen: 1.90, bladeLen: 0.28, bladeW: 0.05,  bladeT: 0.05,  guardW: 0.0,  head: "spear", color: 0xdfe5ee },
+  swordshield: { gripLen: 0.20, bladeLen: 0.92, bladeW: 0.075, bladeT: 0.022, guardW: 0.30, head: "blade", color: 0xdfe5ee },
 };
 
 function buildWeaponMesh(key) {
@@ -335,4 +382,4 @@ function buildWeaponMesh(key) {
   return sword;
 }
 
-export const WEAPON_LIST = ["arming", "longsword", "mace", "spear"];
+export const WEAPON_LIST = ["arming", "longsword", "mace", "spear", "swordshield"];

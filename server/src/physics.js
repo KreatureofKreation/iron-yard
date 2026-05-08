@@ -87,9 +87,13 @@ export class PhysicsWorld {
       .setDensity(60)
       .setCollisionGroups(0);  // no collision — visual / dynamics only
     this.world.createCollider(cd, torso);
-    // Spherical joint pinning torso bottom to the body capsule top.
+    // Spherical joint pinning torso bottom to the body capsule's top. Body capsule
+    // center is at pos.y + 0.9; top is at +0.9 above center. Torso is created at
+    // pos.y + 1.10 with bottom anchor at -0.30 → joint at pos.y + 0.80. Match the body
+    // anchor to that height by using y=-0.10 in body's local frame (body local y=0 is
+    // its own center at pos.y+0.9; -0.10 → pos.y+0.80, matching torso anchor).
     const params = RAPIER.JointData.spherical(
-      { x: 0, y: 0.5, z: 0 },        // anchor on body capsule (top)
+      { x: 0, y: -0.10, z: 0 },      // anchor on body capsule
       { x: 0, y: -0.30, z: 0 },      // anchor on torso (bottom)
     );
     const joint = this.world.createImpulseJoint(params, b.body, torso, true);
@@ -224,8 +228,9 @@ export class PhysicsWorld {
     const bodyMass = sw.body.mass() || wMass;        // Rapier-computed mass
     // k = stiffness, d = damping. Inverse-mass on stiffness so heavier feels heavier.
     // Damping low enough that the tip overshoots toward fast target motion (swing feel).
-    const k = 800 / wMass;
-    const d = 10;
+    // Lower stiffness + higher damping → heavy, deliberate swings (not twiggy).
+    const k = 380 / wMass;
+    const d = 14;
     const ax = (target.x - t.x) * k - v.x * d;
     const ay = (target.y - t.y) * k - v.y * d;
     const az = (target.z - t.z) * k - v.z * d;
@@ -254,6 +259,10 @@ export class PhysicsWorld {
   // After step(): call drainContacts() to consume {attackerId, victimId, impactSpeed}.
   step() {
     this._contacts.clear();
+    if (!this._clashes) this._clashes = [];
+    // Note: clashes are drained by combat each tick; if combat skipped (countdown/intermission)
+    // they accumulate. Bound the buffer so it can't grow unbounded.
+    if (this._clashes.length > 64) this._clashes.length = 0;
     this.world.step(this.eventQueue);
     this.eventQueue.drainCollisionEvents((h1, h2, started) => {
       if (!started) return;
@@ -325,14 +334,18 @@ export class PhysicsWorld {
   spawnArenaProps(positions) {
     for (const p of positions) {
       const radius = 0.45, height = 0.95;
+      // Sit barrel on ground: cylinder half-height = 0.475, so center at 0.475 lifts
+      // the bottom flush with y=0.
       const desc = RAPIER.RigidBodyDesc.dynamic()
-        .setTranslation(p.x, p.y + height / 2 + 0.2, p.z)
+        .setTranslation(p.x, p.y + height / 2, p.z)
         .setLinearDamping(0.7).setAngularDamping(0.9);
       const body = this.world.createRigidBody(desc);
+      // Reuse GROUP_BODY membership so swords' filter (BODY|SWORD) collides with barrels.
+      // Barrels collide with bodies + swords + other barrels.
       const cd = RAPIER.ColliderDesc.cylinder(height / 2, radius)
         .setDensity(80)
         .setFriction(0.95)
-        .setCollisionGroups(((1<<3) << 16) | 0xFFFF);   // collides with everything
+        .setCollisionGroups((GROUP_BODY << 16) | (GROUP_BODY | GROUP_SWORD));
       this.world.createCollider(cd, body);
       this.props.push({ body });
     }
@@ -363,6 +376,25 @@ export class PhysicsWorld {
     sw.body.setTranslation({ x: pos.x, y: pos.y, z: pos.z }, true);
     sw.body.setLinvel({ x: 0, y: 0, z: 0 }, true);
     sw.body.setAngvel({ x: 0, y: 0, z: 0 }, true);
+  }
+
+  // Reset torso/head bodies to upright + clear velocities (e.g. on respawn) so the
+  // new life starts without inherited wobble.
+  resetRagPos(playerId, pos) {
+    const t = this.torsos.get(playerId);
+    if (t) {
+      t.body.setTranslation({ x: pos.x, y: pos.y + 1.10, z: pos.z }, true);
+      t.body.setRotation({ x: 0, y: 0, z: 0, w: 1 }, true);
+      t.body.setLinvel({ x: 0, y: 0, z: 0 }, true);
+      t.body.setAngvel({ x: 0, y: 0, z: 0 }, true);
+    }
+    const h = this.heads.get(playerId);
+    if (h) {
+      h.body.setTranslation({ x: pos.x, y: pos.y + 1.55, z: pos.z }, true);
+      h.body.setRotation({ x: 0, y: 0, z: 0, w: 1 }, true);
+      h.body.setLinvel({ x: 0, y: 0, z: 0 }, true);
+      h.body.setAngvel({ x: 0, y: 0, z: 0 }, true);
+    }
   }
 
   // Replace the body for a weapon-swap. Keeps current position so the swap looks smooth.

@@ -88,6 +88,9 @@ export function resolveHits(players, nowMs, physics) {
             : facing > 0    ? CONFIG.COMBAT.blockReductionSide
             : 0;
       if (w.blunt) red = Math.max(0, red - CONFIG.COMBAT.bluntBlockPenalty);
+      // Sword+shield wielder reduces incoming damage further (defender's weapon, not attacker's).
+      const tw = weaponOf(t);
+      if (tw.shieldBonus && red > 0) red = Math.min(0.97, red + 0.20);
       dmg *= (1 - red);
     }
     dmg = Math.round(dmg);
@@ -105,6 +108,7 @@ export function resolveHits(players, nowMs, physics) {
     t.hp = Math.max(0, t.hp - dmg);
     a.lastHitAtMs.set(t.id, nowMs);
     a.stamina = Math.max(0, a.stamina - CONFIG.PLAYER.staminaSwingCost);
+    a.roundDamage = (a.roundDamage || 0) + dmg;
 
     // Knockdown: hits > 60 dmg topple victim for 1.5s (input locked, sword dropped,
     // torso joint loosens so they physically slump). Also push torso in attacker's
@@ -118,14 +122,31 @@ export function resolveHits(players, nowMs, physics) {
       events.push({ kind: "knockdown", id: t.id, at: { x: t.pos.x, y: t.pos.y, z: t.pos.z } });
     }
 
-    // Knockback impulse (separate channel from movement vel).
+    // Knockback impulse on victim — bigger so heavy weapons feel impactful.
     const kb = norm(sub(t.pos, a.pos));
-    const kbMag = 2.5 + (zone === "head" ? 1.5 : 0.5) + tipSpeed * 0.10;
+    const kbMag = 5.0 + (zone === "head" ? 3.0 : 1.0) + tipSpeed * 0.18;
     t.impulse.x += kb.x * kbMag;
     t.impulse.z += kb.z * kbMag;
+    // Recoil on attacker — torso jerks back from the impact (Newton's third + drama).
+    if (physics) {
+      const recoilMag = (3.0 + tipSpeed * 0.15) * (w.mass / 2.0);
+      physics.pushTorso(a.id, { x: -kb.x * recoilMag, y: 0.5, z: -kb.z * recoilMag });
+      // Brief sword body slowdown so it doesn't pass clean through the victim.
+      const sw = physics.swords?.get(a.id);
+      if (sw) {
+        const v = sw.body.linvel();
+        sw.body.setLinvel({ x: v.x * 0.25, y: v.y * 0.25, z: v.z * 0.25 }, true);
+      }
+    }
     if (zone === "legs") {
       t.vel.x *= 0.4; t.vel.z *= 0.4;
       t.crippledUntilMs = nowMs + 3000;
+      // Sever roll: heavy slash/pierce to legs has a chance to sever (non-lethal but
+      // permanent for the round). Doesn't trigger if already severed.
+      if (!t.severedLeg && (w.damageType === "slash" || w.damageType === "pierce") && dmg >= 35 && Math.random() < 0.35) {
+        t.severedLeg = true;
+        events.push({ kind: "sever", id: t.id, limb: "leg", at: { x: t.pos.x, y: t.pos.y + 0.3, z: t.pos.z } });
+      }
     }
 
     // Damage-type status effects.

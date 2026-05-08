@@ -39,6 +39,7 @@ export function makePlayer(name, spawn, weaponKey) {
     zombieUntilMs: 0,                 // > 0 while disconnected awaiting rejoin
     score: 0,
     deaths: 0,
+    roundDamage: 0,
     pendingInput: null,
     killStreak: 0,
     crippledUntilMs: 0,
@@ -46,6 +47,7 @@ export function makePlayer(name, spawn, weaponKey) {
     disarmedUntilMs: 0,
     knockedDownUntilMs: 0,
     commitStrikeUntilMs: 0,
+    severedLeg: false,
     _lastTipVel: { x: 0, y: 0, z: 0 },
     bleedUntilMs: 0,
     bleedDmgPerSec: 0,
@@ -105,6 +107,7 @@ export function applyInput(p, input, dtMs) {
   if (canBlock) speed *= 0.55;
   if (p.swinging) speed *= 0.75;
   if (Date.now() < p.crippledUntilMs) speed *= 0.45;   // leg cripple debuff
+  if (p.severedLeg) speed *= 0.35;                     // severed leg = permanent crawl this round
 
   // Smooth acceleration toward target velocity.
   const targetVx = mx * speed;
@@ -235,6 +238,7 @@ export function maybeRespawn(p, spawn, nowMs) {
   p.stunUntilMs = 0;
   p.disarmedUntilMs = 0;
   p.knockedDownUntilMs = 0;
+  p.severedLeg = false;
   p.bleedUntilMs = 0;
   p.bleedDmgPerSec = 0;
   p.bleedAccum = 0;

@@ -203,12 +203,21 @@ net.on("welcome", (m) => {
   if (m.you?.spawnPos) {
     state.cameraYaw = Math.atan2(m.you.spawnPos.x, m.you.spawnPos.z);
   }
+  // Wipe any stale references to the old scene before rebuilding so we don't keep
+  // writing to detached meshes / leak GPU memory.
+  for (const m of serverPropMeshes) { try { scene.remove(m); } catch {} }
+  serverPropMeshes.length = 0;
+  for (const halo of swordHaloMap.values()) { try { scene.remove(halo); } catch {} }
+  swordHaloMap.clear();
+  fallingProps.length = 0;
+  clearAllRagdolls();
   scene = buildScene().scene;
   // Server-authoritative props: visual meshes built lazily as they appear in snap.
   // Spectators have no local rig; camera will pick a target each frame.
   if (!state.spectator) {
     const pal = paletteFor(m.id, state.colorPick);
-    state.rig = buildCharacter({ ...pal, isLocal: true, weaponKey: state.weaponKey });
+    const grip = (RUNTIME.weapons[state.weaponKey]?.grip) || "one-hand";
+    state.rig = buildCharacter({ ...pal, isLocal: true, weaponKey: state.weaponKey, grip });
     scene.add(state.rig.root);
     HUD.setHp(state.local.hp, RUNTIME.player.hp);
   } else {
@@ -255,6 +264,8 @@ net.on("snap", (m) => {
       state.local.alive = p.alive;
       state.local.invulnMs = p.invulnMs || 0;
       state.local.crippleMsLeft = p.crippleMsLeft || 0;
+      state.local.severedLeg = !!p.severedLeg;
+      if (state.rig?.setSeveredLeg) state.rig.setSeveredLeg(state.local.severedLeg);
       state.local.stunMsLeft = p.stunMsLeft || 0;
       state.local.bleedMsLeft = p.bleedMsLeft || 0;
       state.local.torsoRot = p.torsoRot || null;
@@ -279,7 +290,8 @@ net.on("snap", (m) => {
     if (!r || r.weaponKey !== p.weaponKey || r.color !== p.color) {
       if (r) { scene.remove(r.rig.root); }
       const pal = paletteFor(p.id, p.color);
-      const rig = buildCharacter({ ...pal, weaponKey: p.weaponKey || "arming" });
+      const grip = (RUNTIME.weapons[p.weaponKey]?.grip) || "one-hand";
+      const rig = buildCharacter({ ...pal, weaponKey: p.weaponKey || "arming", grip });
       scene.add(rig.root);
       r = { rig, buf: [], hp: p.hp, name: p.name, score: 0, deaths: 0,
             weaponKey: p.weaponKey || "arming", color: p.color || 0,
@@ -297,6 +309,8 @@ net.on("snap", (m) => {
     const wasAliveR = r.alive;
     r.invulnMs = p.invulnMs || 0;
     r.crippleMsLeft = p.crippleMsLeft || 0;
+    r.severedLeg = !!p.severedLeg;
+    if (r.rig?.setSeveredLeg) r.rig.setSeveredLeg(r.severedLeg);
     r.stunMsLeft = p.stunMsLeft || 0;
     r.bleedMsLeft = p.bleedMsLeft || 0;
     r.disarmedMsLeft = p.disarmedMsLeft || 0;
@@ -437,6 +451,20 @@ net.on("streak", (m) => {
   if (m.id === state.myId) SFX.fanfare();
 });
 
+net.on("sever", (m) => {
+  const pan = computePan(m.at);
+  SFX.hit(0.9, pan);
+  // Big blood burst.
+  for (let i = 0; i < 6; i++) {
+    spark(scene, m.at, 0.6, 0xa01515);
+  }
+  if (m.id === state.myId) {
+    state.shake.mag = Math.max(state.shake.mag, 0.55);
+    HUD.flash(0.5);
+  }
+  HUD.killFeed(`✂ ${nameFor(m.id)} loses a leg`);
+});
+
 net.on("knockdown", (m) => {
   const pan = computePan(m.at);
   SFX.thud(pan);
@@ -474,7 +502,8 @@ net.on("pickup", (m) => {
     state.weaponKey = m.weapon;
     // Update RUNTIME.weapon so tip-inertia uses correct mass.
     if (RUNTIME.weapons[m.weapon]) RUNTIME.weapon = { ...RUNTIME.weapon, ...RUNTIME.weapons[m.weapon] };
-    state.rig = buildCharacter({ ...pal, isLocal: true, weaponKey: m.weapon });
+    const grip = (RUNTIME.weapons[m.weapon]?.grip) || "one-hand";
+    state.rig = buildCharacter({ ...pal, isLocal: true, weaponKey: m.weapon, grip });
     scene.add(state.rig.root);
     HUD.killFeed(`picked up ${m.weapon}`);
   } else {
@@ -482,7 +511,8 @@ net.on("pickup", (m) => {
     if (r) {
       scene.remove(r.rig.root);
       const pal = paletteFor(m.id);
-      r.rig = buildCharacter({ ...pal, weaponKey: m.weapon });
+      const grip = (RUNTIME.weapons[m.weapon]?.grip) || "one-hand";
+      r.rig = buildCharacter({ ...pal, weaponKey: m.weapon, grip });
       scene.add(r.rig.root);
       r.weaponKey = m.weapon;
     }
@@ -505,9 +535,13 @@ net.on("matchEnd", (m) => {
     <td style="padding:.15rem .8rem;">${r.score}</td>
     <td style="padding:.15rem .8rem; opacity:.6;">${r.deaths}</td></tr>`).join("");
   const reasonNote = m.reason === "timeout" ? "time over" : "first to score";
+  const mvpHtml = m.mvp
+    ? `<div style="font-size:.85rem; color:#ffd060; margin:.3rem 0;">MVP · ${escapeHtml(m.mvp.name)} · ${m.mvp.dmg} dmg</div>`
+    : "";
   HUD.showBanner(
     `<div style="font-size:1.4rem;">ROUND ${m.round} · ${escapeHtml(winName)} wins</div>
      <div style="font-size:.7rem; opacity:.6; letter-spacing:.2em; margin:.2rem 0 .6rem;">${reasonNote}</div>
+     ${mvpHtml}
      <table style="margin: 0 auto; font-size:.85rem; border-collapse:collapse;">
        <thead><tr style="opacity:.6;"><th style="padding:.15rem .8rem; text-align:left;">name</th><th>K</th><th>D</th></tr></thead>
        <tbody>${tableHtml}</tbody>
@@ -541,6 +575,7 @@ net.on("reopen", () => { HUD.log("reconnected"); window.IRONYARD_INGAME = true; 
 net.on("chat",  (m) => HUD.log(`${m.name}: ${m.text}`));
 
 function nameFor(id) {
+  if (id === 0) return "bleeding";          // bleed-out kill (no attacker)
   if (id === state.myId) return "you";
   const r = state.remotes.get(id);
   return r?.name ?? `#${id}`;
@@ -708,19 +743,12 @@ function frame(t) {
     interpolateRemote(r, renderTime);
   }
 
-  // Camera auto-trails the player. Manual drag (middle/right mouse, mobile ◄►)
-  // adds an OFFSET that decays back to behind-player, so dragging is a temporary peek.
-  state.cameraYawOffset = (state.cameraYawOffset || 0) + (inp.cameraYawDelta || 0);
-  // Decay offset back to 0 over ~1.2s.
-  state.cameraYawOffset *= Math.exp(-dt * 0.8);
+  // Camera is independent of player yaw / mouse aim. It only rotates from explicit
+  // user input (ALT+mouse drag while pointer-locked, ◄ ► touch buttons, Q/E keys).
+  state.cameraYaw   += inp.cameraYawDelta || 0;
   if (inp.cameraPitchDelta) state.cameraPitch += inp.cameraPitchDelta;
   state.cameraPitch = Math.max(0.05, Math.min(1.2, state.cameraPitch));
   state.cameraDist = clamp(state.cameraDist + inp.zoomDelta, 2.5, 9);
-  // Auto-orient camera behind the player. With our convention forward=(-sin,_,-cos),
-  // camera offset (sin*d,_,cos*d) at cameraYaw=playerYaw puts camera on the OPPOSITE
-  // side from forward → behind the player.
-  const camTargetYaw = state.local.yaw + state.cameraYawOffset;
-  state.cameraYaw = lerpAngle(state.cameraYaw, camTargetYaw, Math.min(1, dt * 4.5));
 
   // Spectator: when dead, look at the killer (or nearest alive enemy) and slowly orbit.
   let lookTargetPos = state.local.pos;
@@ -1145,10 +1173,11 @@ if (params.get("dev")) serverInput.style.display = "";
 
 // Weapon picker.
 const WEAPON_BLURBS = {
-  arming:    "Arming sword — balanced one-hand. Quick, reliable. ~1.1m, ~1.1kg.",
-  longsword: "Longsword — two-hand reach, heavier swings, big damage. ~1.3m, ~1.5kg.",
-  mace:      "Mace — short, blunt, brutal. Ignores some block reduction. ~0.8m, ~1.4kg.",
-  spear:     "Spear — longest reach. Bonus damage on thrust motions. ~2.1m.",
+  arming:      "Arming sword — balanced one-hand. Quick, reliable.",
+  longsword:   "Longsword — two-hand reach, heavier swings, big damage.",
+  mace:        "Mace — short, blunt, brutal. Ignores some block reduction.",
+  spear:       "Spear — two-hand thrusting weapon. Longest reach. +40% on thrust.",
+  swordshield: "Sword + shield — one-hand sword with shield. +20% block reduction.",
 };
 const blurbEl = document.getElementById("weapon-blurb");
 const wpnBtns = [...document.querySelectorAll("button.weapon")];
