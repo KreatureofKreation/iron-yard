@@ -377,8 +377,9 @@ export function buildCharacter({ color = 0x9aa0a8, accent = 0xc8a97e, isLocal = 
           // Chest twist — chambers away during wind-up, snaps toward strike at apex.
           // Applied to torso rotation.y (chest mesh only) so it reads as a visible
           // shoulder turn without breaking the weaponRig's IK aiming.
+          let dir = 0;
           if (attackType === "swingR" || attackType === "swingL" || attackType === "overhead") {
-            const dir = attackType === "swingL" ? -1 : 1;
+            dir = attackType === "swingL" ? -1 : 1;
             const twist = attackT < 0.22
               ? -dir * 0.30 * (attackT / 0.22)
               : attackT < 0.55
@@ -390,8 +391,43 @@ export function buildCharacter({ color = 0x9aa0a8, accent = 0xc8a97e, isLocal = 
             head.rotation.x += attackT < 0.22 ? -0.12 * (attackT / 0.22)
                               : attackT < 0.55 ? 0.12 * (1 - (attackT - 0.22) / 0.33) : 0;
           }
+
+          // Lead-foot stomp on strike apex (Half-Sword-style power-transfer plant).
+          // Lead foot is opposite-side from strike direction (rotate INTO the swing).
+          // dir>0 = swingR (strike to right) → left foot leads. dir<0 → right foot leads.
+          // Stab/overhead default lead = right foot.
+          const leadIsLeft = dir > 0;
+          if (attackT > 0.30 && attackT < 0.65) {
+            const w = (attackT - 0.30) / 0.35;
+            const stomp = Math.sin(w * Math.PI);                  // 0..1..0
+            // Slam foot down during apex (negative Y on lifted leg) then plant.
+            if (leadIsLeft) {
+              legL.thigh.rotation.x = -0.55 * stomp;              // forward planted leg
+              legL.shin.rotation.x  =  0.30 * stomp;
+              legR.thigh.rotation.x =  0.20 * stomp;              // back leg drives
+              legR.shin.rotation.x  =  0.10 * stomp;
+            } else {
+              legR.thigh.rotation.x = -0.55 * stomp;
+              legR.shin.rotation.x  =  0.30 * stomp;
+              legL.thigh.rotation.x =  0.20 * stomp;
+              legL.shin.rotation.x  =  0.10 * stomp;
+            }
+            // Whole-body sinks 4cm into the plant for visceral weight.
+            root.position.y -= 0.04 * stomp;
+          }
+
+          // Head tracks the strike — eyes follow the sword.
+          if (dir !== 0 && attackT > 0.15 && attackT < 0.75) {
+            const w = (attackT - 0.15) / 0.60;
+            const tracking = Math.sin(w * Math.PI);                // peaks mid-swing
+            head.rotation.y = -dir * 0.25 * tracking;              // turn into the strike
+            helm.rotation.y = -dir * 0.25 * tracking;
+            head.rotation.x += 0.10 * tracking;                    // slight forward nod at apex
+          }
         } else {
           torso.rotation.y = 0;
+          head.rotation.y = 0;
+          helm.rotation.y = 0;
         }
 
         // Left arm posing.

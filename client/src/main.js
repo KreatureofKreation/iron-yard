@@ -344,6 +344,19 @@ function segEase(i) {
   return easeFn("easeInOut");
 }
 
+// Catmull-Rom spline through 4 control points. Smooth C¹-continuous curve that passes
+// through p1 and p2; p0 and p3 act as tangent guides. Endpoints duplicate.
+function catmullRom(p0, p1, p2, p3, t) {
+  const t2 = t * t;
+  const t3 = t2 * t;
+  return 0.5 * (
+    (2 * p1) +
+    (-p0 + p2) * t +
+    (2 * p0 - 5 * p1 + 4 * p2 - p3) * t2 +
+    (-p0 + 3 * p1 - 3 * p2 + p3) * t3
+  );
+}
+
 function attackPathLocal(type, t, weaponKey = "arming") {
   const paths = pathsFor(weaponKey);
   const path = paths[type] ?? ATTACK_PATHS[type];
@@ -354,10 +367,13 @@ function attackPathLocal(type, t, weaponKey = "arming") {
       const a = w[i], b = w[i + 1];
       const u = (t - a.t) / Math.max(1e-6, b.t - a.t);
       const ue = segEase(i)(Math.max(0, Math.min(1, u)));
+      // Catmull-Rom through 4 control points — true curved arc, no piecewise corners.
+      const pPrev = w[i - 1] || w[i];
+      const pNext = w[i + 2] || w[i + 1];
       return {
-        x: a.x + (b.x - a.x) * ue,
-        y: a.y + (b.y - a.y) * ue,
-        z: a.z + (b.z - a.z) * ue,
+        x: catmullRom(pPrev.x, a.x, b.x, pNext.x, ue),
+        y: catmullRom(pPrev.y, a.y, b.y, pNext.y, ue),
+        z: catmullRom(pPrev.z, a.z, b.z, pNext.z, ue),
       };
     }
   }
@@ -605,6 +621,10 @@ net.on("hit", (m) => {
       const screenAngle = worldAngle - state.cameraYaw;
       HUD.hitFrom(screenAngle);
     }
+  }
+  if (m.from === state.myId && m.dmg > 0) {
+    // Hit-stop — brief tip-freeze on attacker for visceral impact (60ms).
+    state._hitStopUntil = performance.now() + 60;
   }
   if (m.kill) {
     SFX.death();
@@ -908,8 +928,10 @@ function frame(t) {
     const myGrip = RUNTIME.weapons[state.weaponKey]?.grip || "one-hand";
     computeAttackTipTarget(state, state.local.pos, state.local.yaw, mvSpeed, state.weaponKey, myGrip, state.weaponTipTarget);
     const wMass = RUNTIME.weapon.mass || 1.0;
-    // Heavier weapons lag the target more — feels weighty.
-    const k = Math.min(1, dt * (14 / wMass));
+    // Heavier weapons lag the target more — feels weighty. Hit-stop briefly freezes
+    // the tip on a successful hit for visceral impact.
+    const isHitStop = performance.now() < (state._hitStopUntil || 0);
+    const k = Math.min(1, dt * (14 / wMass) * (isHitStop ? 0.05 : 1));
     state.weaponTipWorld.lerp(state.weaponTipTarget, k);
     state.weaponTipVel.subVectors(state.weaponTipWorld, state.weaponTipPrev).divideScalar(Math.max(dt, 1 / 240));
 
