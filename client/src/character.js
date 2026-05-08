@@ -106,11 +106,13 @@ export function buildCharacter({ color = 0x9aa0a8, accent = 0xc8a97e, isLocal = 
   gorget.position.y = Y_SHOULDER - height * 0.03;
   root.add(gorget);
 
-  // Cloak (back drape)
-  const cloak = new THREE.Mesh(new THREE.ConeGeometry(radius * 1.1, height * 0.55, 12, 1, true), cloakMat);
-  cloak.position.set(0, Y_CHEST - height * 0.05, -radius * 0.35);
+  // Cloak — apex hangs down at thigh, base is the drape collar at upper back.
+  const cloakH = height * 0.55;
+  const cloak = new THREE.Mesh(new THREE.ConeGeometry(radius * 1.05, cloakH, 12, 1, true), cloakMat);
   cloak.material.side = THREE.DoubleSide;
-  cloak.rotation.x = 0.05;
+  cloak.rotation.x = Math.PI;                  // flip so apex points DOWN
+  // After flip, base (wider end) is at +cloakH/2 in local; place so base sits at shoulder.
+  cloak.position.set(0, Y_SHOULDER - cloakH / 2 - 0.02, -radius * 0.45);
   root.add(cloak);
 
   // Pauldrons (shoulder caps).
@@ -393,21 +395,26 @@ export function buildCharacter({ color = 0x9aa0a8, accent = 0xc8a97e, isLocal = 
         anim.leanX = (anim.leanX || 0) + (THREE.MathUtils.clamp(swingFwd * 0.04, -0.25, 0.25) - (anim.leanX || 0)) * Math.min(1, dt * 12);
         torso.rotation.z = idleSway + anim.leanZ;
         torso.rotation.x = anim.leanX;
-        // Active-ragdoll torso wobble layered on top.
+        // Active-ragdoll torso wobble layered on top. Clamp tightly so the body never
+        // visibly tips over during normal play — wobble is meant to be a subtle hit shake.
         if (torsoRot) {
           const cy = Math.cos(-playerYaw), sy = Math.sin(-playerYaw);
           const lx =  cy * torsoRot.x + sy * torsoRot.z;
           const lz = -sy * torsoRot.x + cy * torsoRot.z;
-          torso.rotation.x += lx * 2.0;
-          torso.rotation.z += lz * 2.0;
+          const wx = THREE.MathUtils.clamp(lx * 0.7, -0.18, 0.18);
+          const wz = THREE.MathUtils.clamp(lz * 0.7, -0.18, 0.18);
+          torso.rotation.x += wx;
+          torso.rotation.z += wz;
         }
-        // Head bob from physics.
+        // Head bob from physics — also tightly clamped.
         if (headRot) {
           const cy = Math.cos(-playerYaw), sy = Math.sin(-playerYaw);
           const lx =  cy * headRot.x + sy * headRot.z;
           const lz = -sy * headRot.x + cy * headRot.z;
-          head.rotation.x = lx * 2.0; head.rotation.z = lz * 2.0;
-          helm.rotation.x = lx * 2.0; helm.rotation.z = lz * 2.0;
+          const wx = THREE.MathUtils.clamp(lx * 0.6, -0.20, 0.20);
+          const wz = THREE.MathUtils.clamp(lz * 0.6, -0.20, 0.20);
+          head.rotation.x = wx; head.rotation.z = wz;
+          helm.rotation.x = wx; helm.rotation.z = wz;
         }
         torso.position.y = Y_CHEST + height * 0.02 + Math.sin(phase * 2) * 0.02 * stride;
 

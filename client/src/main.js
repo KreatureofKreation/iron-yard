@@ -69,6 +69,7 @@ const state = {
   weaponKey: "arming",
   shake: { mag: 0, t: 0, decay: 4 },
   swingPlayedAt: 0,
+  attack: null,                 // { type, start, duration } when an attack is playing
 };
 
 // ---------- Color palette per id ----------
@@ -119,55 +120,93 @@ function shoulderWorld(pos, yaw, out = new THREE.Vector3()) {
   return out.set(pos.x + sx, pos.y + 1.4, pos.z + sz);
 }
 
-// Compute weapon tip world position from aim vector + player facing.
-// Stance interpolation:
-//   aim mag < 0.18 → REST: sword down at side, tip near hip
-//   aim.y < -0.4   → LOW guard: tip below waist, forward
-//   aim.y mid      → MID guard: tip forward at chest height
-//   aim.y >  0.4   → HIGH guard: tip raised above shoulder
-//   aim.x          → lateral angle around the body
-function computeWeaponTip(aim, pos, yaw, length, out = new THREE.Vector3()) {
-  const fx = -Math.sin(yaw), fz = -Math.cos(yaw);     // forward in world XZ
-  const rx =  Math.cos(yaw), rz = -Math.sin(yaw);     // right in world XZ
-  const lat = Math.max(-1, Math.min(1, aim.x));
-  const ver = Math.max(-1, Math.min(1, aim.y));
-  const aimMag = Math.hypot(lat, ver);
+// Discrete button-driven attacks. Each is a piecewise-linear path through waypoints
+// in player-local coords (x=right, y=up, z=forward). The actual sword body is driven
+// by the server's spring toward this target, so heavier weapons still feel heavy.
+const REST_LOCAL = { x: 0.45, y: 1.05, z: 0.30 };
 
-  shoulderWorld(pos, yaw, tmpV);
+const ATTACK_PATHS = {
+  swingR: {
+    duration: 380,
+    wpts: [
+      { t: 0.00, x: -0.40, y: 1.45, z: 0.10 },   // wind-up: sword crossed left
+      { t: 0.30, x:  0.05, y: 1.45, z: 0.95 },   // strike apex: extended forward
+      { t: 0.60, x:  0.75, y: 1.25, z: 0.55 },   // follow-through right
+      { t: 1.00, x: REST_LOCAL.x, y: REST_LOCAL.y, z: REST_LOCAL.z },
+    ],
+  },
+  swingL: {
+    duration: 380,
+    wpts: [
+      { t: 0.00, x:  0.40, y: 1.45, z: 0.10 },
+      { t: 0.30, x: -0.05, y: 1.45, z: 0.95 },
+      { t: 0.60, x: -0.75, y: 1.25, z: 0.55 },
+      { t: 1.00, x: REST_LOCAL.x, y: REST_LOCAL.y, z: REST_LOCAL.z },
+    ],
+  },
+  overhead: {
+    duration: 480,
+    wpts: [
+      { t: 0.00, x:  0.30, y: 2.10, z: -0.25 },  // raised behind head
+      { t: 0.30, x:  0.25, y: 1.80, z:  0.55 },  // arc forward
+      { t: 0.65, x:  0.10, y: 0.95, z:  1.10 },  // chop down + forward
+      { t: 1.00, x: REST_LOCAL.x, y: REST_LOCAL.y, z: REST_LOCAL.z },
+    ],
+  },
+  stab: {
+    duration: 340,
+    wpts: [
+      { t: 0.00, x: 0.30, y: 1.35, z: 0.05 },    // pull back
+      { t: 0.45, x: 0.30, y: 1.40, z: 1.55 },    // thrust extended
+      { t: 1.00, x: REST_LOCAL.x, y: REST_LOCAL.y, z: REST_LOCAL.z },
+    ],
+  },
+};
 
-  // ---- Rest pose: tip beside the hip, angled slightly down + forward ----
-  // Computed in world: hip-side anchor + small forward extension.
-  const rest = {
-    x: tmpV.x + rx * 0.20 + fx * 0.45,                // 0.2m to right shoulder side, 0.45m forward
-    y: pos.y + 0.55,                                   // hip height
-    z: tmpV.z + rz * 0.20 + fz * 0.45,
-  };
+function attackPathLocal(type, t) {
+  const path = ATTACK_PATHS[type];
+  if (!path) return REST_LOCAL;
+  const w = path.wpts;
+  for (let i = 0; i < w.length - 1; i++) {
+    if (t <= w[i + 1].t) {
+      const a = w[i], b = w[i + 1];
+      const u = (t - a.t) / Math.max(1e-6, b.t - a.t);
+      return {
+        x: a.x + (b.x - a.x) * u,
+        y: a.y + (b.y - a.y) * u,
+        z: a.z + (b.z - a.z) * u,
+      };
+    }
+  }
+  return w[w.length - 1];
+}
 
-  // ---- Active stance: extend sword in aim direction with stance verticality ----
-  // Vertical component shaped: low if ver<0, high if ver>0.
-  const verBias = ver * 0.85;                          // -0.85..+0.85 from shoulder
-  const fwd = Math.max(0.20, 1 - Math.min(1, aimMag * 0.55));
-
-  let dx = rx * lat + fx * fwd;
-  let dy = verBias + 0.18;                             // small upward bias for visibility
-  let dz = rz * lat + fz * fwd;
-  const m = Math.hypot(dx, dy, dz) || 1;
-  dx /= m; dy /= m; dz /= m;
-  const active = {
-    x: tmpV.x + dx * length,
-    y: tmpV.y + dy * length,
-    z: tmpV.z + dz * length,
-  };
-
-  // Blend rest → active based on aim magnitude. Smoothstep for gentle transition.
-  const t = Math.max(0, Math.min(1, (aimMag - 0.10) / 0.45));
-  const s = t * t * (3 - 2 * t);                       // smoothstep
+// Convert a player-local point to world space using yaw.
+function localToWorld(pos, yaw, local, out = new THREE.Vector3()) {
+  const fx = -Math.sin(yaw), fz = -Math.cos(yaw);
+  const rx =  Math.cos(yaw), rz = -Math.sin(yaw);
   out.set(
-    rest.x + (active.x - rest.x) * s,
-    rest.y + (active.y - rest.y) * s,
-    rest.z + (active.z - rest.z) * s,
+    pos.x + rx * local.x + fx * local.z,
+    pos.y + local.y,
+    pos.z + rz * local.x + fz * local.z,
   );
   return out;
+}
+
+// Resolve the current weapon-tip target this frame from attack state (or rest).
+function computeAttackTipTarget(state, pos, yaw, out) {
+  const now = performance.now();
+  let local = REST_LOCAL;
+  if (state.attack && state.attack.type) {
+    const elapsed = now - state.attack.start;
+    const t = elapsed / state.attack.duration;
+    if (t >= 1) {
+      state.attack = null;
+    } else {
+      local = attackPathLocal(state.attack.type, t);
+    }
+  }
+  return localToWorld(pos, yaw, local, out);
 }
 
 // Pose the local rig's right arm so the sword visually goes from shoulder to tip.
@@ -626,22 +665,9 @@ function frame(t) {
     state.rig.root.rotation.y = state.local.yaw;
   }
   if (state.rig && state.local.alive) {
-    // Determine player yaw from aim direction (camera-relative); fallback to movement.
-    // Player yaw: rotate to face aim direction relative to CURRENT camera. Player turns
-    // smoothly. Camera independently auto-trails the player (no feedback loop because
-    // movement basis above is player-yaw, not camera-yaw).
-    // Aim → desired player yaw. aim.y > 0 = mouse at top of screen = player should face
-    // camera-forward direction. cameraForward(world) = (-sin camYaw, _, -cos camYaw).
-    let desiredYaw = state.local.yaw;
-    const aimMag = Math.hypot(inp.aim.x, inp.aim.y);
-    if (aimMag > 0.18) {
-      const cR_x =  Math.cos(state.cameraYaw), cR_z = -Math.sin(state.cameraYaw);  // camera right (X,Z)
-      const cF_x = -Math.sin(state.cameraYaw), cF_z = -Math.cos(state.cameraYaw);  // camera forward
-      const wx = inp.aim.x * cR_x + inp.aim.y * cF_x;
-      const wz = inp.aim.x * cR_z + inp.aim.y * cF_z;
-      desiredYaw = Math.atan2(-wx, -wz);
-    }
-    state.local.yaw = lerpAngle(state.local.yaw, desiredYaw, Math.min(1, dt * 14));
+    // Player faces wherever the camera is pointing (third-person standard). Mouse +
+    // right-stick drive the camera, so they also drive facing — no second-stick aim.
+    state.local.yaw = lerpAngle(state.local.yaw, state.cameraYaw, Math.min(1, dt * 14));
 
     // Movement world vector — PLAYER-relative (avoids camera-yaw feedback loop).
     // Stick up / W = inp.mv.y < 0 → walk in player's forward direction.
@@ -673,22 +699,21 @@ function frame(t) {
     if (state.local.pos.z < -half) state.local.pos.z = -half;
     if (state.local.pos.z >  half) state.local.pos.z =  half;
 
-    // Bleed wobble: while bleeding, add small high-frequency jitter to aim.
-    if ((state.local.bleedMsLeft || 0) > 0) {
-      const t = performance.now() / 1000;
-      const wob = 0.06 + Math.min(0.10, (state.local.bleedMsLeft / 4000) * 0.05);
-      inp.aim = {
-        x: inp.aim.x + Math.sin(t * 9.1) * wob,
-        y: inp.aim.y + Math.cos(t * 7.7) * wob,
-      };
+    // Attack state — start a new attack on edge trigger if no active attack (or the
+    // active one is past its 60% mark, so successive clicks chain).
+    if (inp.attackTrigger && (!state.attack || (performance.now() - state.attack.start) > state.attack.duration * 0.60)) {
+      const dur = ATTACK_PATHS[inp.attackTrigger]?.duration ?? 380;
+      // Heavier weapons take longer to arc. Mass scales duration up to ~1.5x.
+      const wMassDur = (RUNTIME.weapon.mass || 1.0);
+      const scaledDur = Math.round(dur * (0.85 + 0.18 * Math.min(2.0, wMassDur)));
+      state.attack = { type: inp.attackTrigger, start: performance.now(), duration: scaledDur };
     }
 
-    // Compute target weapon tip from aim, then lerp the actual tip toward it with
-    // mass-dependent rate (heavier weapons lag more — that's the "weight" feel).
+    // Compute target weapon tip from attack state (or rest), then lerp the actual tip
+    // toward it with mass-dependent rate (heavier = more lag = more weight).
     state.weaponTipPrev.copy(state.weaponTipWorld);
-    computeWeaponTip(inp.aim, state.local.pos, state.local.yaw, RUNTIME.weapon.length, state.weaponTipTarget);
+    computeAttackTipTarget(state, state.local.pos, state.local.yaw, state.weaponTipTarget);
     const wMass = RUNTIME.weapon.mass || 1.0;
-    // Higher mass → slower convergence. Lower base = heavier overall feel.
     const k = Math.min(1, dt * (12 / wMass));
     state.weaponTipWorld.lerp(state.weaponTipTarget, k);
     state.weaponTipVel.subVectors(state.weaponTipWorld, state.weaponTipPrev).divideScalar(Math.max(dt, 1 / 240));
@@ -708,7 +733,7 @@ function frame(t) {
       alive: state.local.alive, swingLat, swingFwd,
       crippled: (state.local.crippleMsLeft || 0) > 0,
       stunned:  (state.local.stunMsLeft    || 0) > 0,
-      verAim:   inp.aim.y,
+      verAim:   verAimFromAttack(state.attack),
       tipDist:  tipDistLocal,
       torsoRot: state.local.torsoRot,
       headRot:  state.local.headRot,
@@ -1149,10 +1174,19 @@ function spark(scene, at, scale = 0.3, color = 0xff8050) {
 function stanceLabel(inp) {
   if ((state.local.commitMsLeft || 0) > 0) return "★ COMMIT ★";
   if (inp.block) return "— guard —";
-  const m = Math.hypot(inp.aim.x, inp.aim.y);
-  if (m > 0.85) return "— full extension —";
-  if (m > 0.45) return "— ready —";
+  if (state.attack && state.attack.type) {
+    return `— ${state.attack.type} —`;
+  }
   return "— at rest —";
+}
+
+// Map current attack state to a "vertical aim" hint that drives the rig's shoulder
+// lift animation (overhead = lifted shoulder, stab = neutral, swings = neutral).
+function verAimFromAttack(att) {
+  if (!att) return 0;
+  if (att.type === "overhead") return 0.6;
+  if (att.type === "stab")     return 0.0;
+  return 0.1;
 }
 
 // ---------- Menu / connect ----------
@@ -1308,6 +1342,16 @@ bindSlider("set-camdist","camdist", (v) => v.toFixed(1));
 async function play() {
   SFX.unlockAudio();   // first user gesture — required for Web Audio
   SFX.click();
+  // Default to fullscreen — must be triggered from the PLAY click (user gesture).
+  try {
+    const el = document.documentElement;
+    const req = el.requestFullscreen || el.webkitRequestFullscreen || el.msRequestFullscreen;
+    if (req && !document.fullscreenElement) await req.call(el);
+    // Lock to landscape on touch devices (Android Chrome supports this; iOS will throw).
+    if (screen.orientation && screen.orientation.lock) {
+      try { await screen.orientation.lock("landscape"); } catch {}
+    }
+  } catch (e) { /* user denied or unsupported — fine */ }
   // Init Rapier physics (client-side ragdolls). Idempotent — safe to await each PLAY.
   try { await initRapier(); } catch (e) { console.warn("rapier init failed:", e); }
   const name = nameInput.value.trim() || autoName();

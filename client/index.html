@@ -118,6 +118,15 @@
         position:absolute; inset:0; display:none; align-items:center; justify-content:center;
         background: rgba(0,0,0,0.5); color:#d04040; font-size:2rem; letter-spacing:.3rem;
       }
+      /* Portrait warning — only shown on touch devices when held vertical. */
+      #rotate-hint {
+        position:fixed; inset:0; display:none; align-items:center; justify-content:center;
+        background:#0a0a0a; color:#c8a97e; font-size:1.2rem; letter-spacing:.2em;
+        text-align:center; z-index:200; padding:2rem;
+      }
+      @media (hover: none) and (pointer: coarse) and (orientation: portrait) {
+        #rotate-hint { display:flex; }
+      }
     </style>
   </head>
   <body>
@@ -148,11 +157,12 @@
       <button id="enter">PLAY</button>
       <input id="server" placeholder="ws://host:8080" value="" />
       <div id="status"></div>
-      <div class="sub" style="margin-top:1rem; max-width:560px; text-align:center; color:#888; line-height:1.5;">
-        <b>desktop:</b> WASD move · mouse aims sword · sword's motion <i>is</i> the swing · F block · Shift sprint · Space jump<br>
-        <b>mobile:</b> twin-stick — left moves, right is your sword · buttons for jump · run · block · turn phone sideways
+      <div class="sub" style="margin-top:1rem; max-width:600px; text-align:center; color:#888; line-height:1.5;">
+        <b>desktop:</b> WASD move · mouse = camera · LMB right swing · MMB left swing · scroll-down overhead · scroll-up stab · RMB block · Shift sprint · Space jump<br>
+        <b>mobile:</b> left stick move · right stick camera · 4 attack buttons · landscape only
       </div>
     </div>
+    <div id="rotate-hint">↻  rotate device to landscape</div>
 
     <div id="hud">
       <div id="crosshair"></div>

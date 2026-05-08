@@ -1,35 +1,43 @@
-// Unified input source. Desktop: keyboard + mouse. Mobile: touch joysticks.
-// Output state: { mv:{x,y}, aim:{x,y}, sprint, jump, block }
-//   mv: -1..1, world-relative movement direction (camera-relative computed elsewhere).
-//   aim: -1..1, the "right stick" — sword tip target relative to player facing arc.
+// Unified input source. Desktop: keyboard + mouse. Mobile: touch sticks + buttons.
+// Output state: { mv:{x,y}, sprint, jump, block, attackTrigger,
+//                 cameraYawDelta, cameraPitchDelta, zoomDelta }
 //
-// Aim coords:
-//   aim.x: lateral (-1 left, 1 right)
-//   aim.y: vertical/forward extension (-1 below/back, 1 up/forward)
-//   magnitude: how far/extended sword reaches (0 rest, 1 full extension).
+// Desktop bindings:
+//   WASD          movement
+//   mouse         camera (no second-stick aim)
+//   LMB           swingR
+//   MMB           swingL
+//   RMB (hold)    block
+//   Wheel down    overhead
+//   Wheel up      stab
+//   Space         jump
+//   Shift         sprint
+//   F             block (alt)
+//
+// Mobile bindings (landscape):
+//   left stick    movement
+//   right stick   camera
+//   4 buttons     swingL / swingR / overhead / stab
+//   action btns   jump / sprint / block
 
 import { CLIENT } from "./config.js";
 
 export class Input {
   constructor() {
     this.mv = { x: 0, y: 0 };
-    this.aim = { x: 0, y: 0 };
-    this.aimSmoothed = { x: 0, y: 0 };
     this.sprint = false;
     this.jump = false;          // edge: consumed each tick
     this.block = false;
-    this.cameraYawDelta = 0;    // mouse drag of right side (mobile) or wheel (desktop)
+    this.cameraYawDelta = 0;
     this.cameraPitchDelta = 0;
-    this.zoomDelta = 0;
+    this.zoomDelta = 0;         // unused on desktop now (wheel = attacks). Kept for future.
     this.touchActive = false;
+    this._attackQueued = null;  // "swingL"|"swingR"|"overhead"|"stab"|null
+    this._wheelLatch = 0;       // ms timestamp; rate-limit wheel attacks
+    this._rmbDown = false;      // RMB hold = block
 
     this._keys = new Set();
-    this._mouse = { down: false, pressed: false };
-    this._mousePos = { x: 0.5, y: 0.5 };  // normalized 0..1 on canvas (pre-lock fallback)
-    this._aimVirtX = 0;                    // -1..1 accumulator while pointer-locked
-    this._aimVirtY = 0;
     this._pointerLocked = false;
-    this._altDown = false;
 
     this._installKeyboard();
     this._installMouse();
@@ -41,24 +49,19 @@ export class Input {
       if (e.repeat) return;
       this._keys.add(e.code);
       if (e.code === "Space") this.jump = true;
-      if (e.code === "AltLeft" || e.code === "AltRight") this._altDown = true;
     });
     window.addEventListener("keyup", (e) => {
       this._keys.delete(e.code);
-      if (e.code === "AltLeft" || e.code === "AltRight") this._altDown = false;
     });
-    window.addEventListener("blur", () => { this._keys.clear(); this._altDown = false; });
+    window.addEventListener("blur", () => { this._keys.clear(); this._rmbDown = false; });
   }
 
   _installMouse() {
-    // Pointer-lock state.
     document.addEventListener("pointerlockchange", () => {
       this._pointerLocked = document.pointerLockElement != null;
     });
-    // Click anywhere on the game canvas to capture the mouse — DESKTOP ONLY.
-    // Mobile/touch can't pointer-lock and trying breaks the menu flow.
     const tryLock = () => {
-      if (this.touchActive) return;                       // never on touch
+      if (this.touchActive) return;
       if (this._pointerLocked) return;
       const canvas = document.querySelector("#app canvas");
       if (canvas && canvas.requestPointerLock) {
@@ -66,49 +69,45 @@ export class Input {
       }
     };
     window.addEventListener("mousedown", (e) => {
-      if (e.button === 0) this._mouse.down = true;
       if (this.touchActive) return;
-      if (!this._pointerLocked) {
+      if (this._pointerLocked) {
+        if (e.button === 0)      this._attackQueued = "swingR";   // LMB
+        else if (e.button === 1) this._attackQueued = "swingL";   // MMB
+        else if (e.button === 2) this._rmbDown = true;            // RMB hold = block
+      } else {
         const tag = (e.target && e.target.tagName) || "";
-        // Only lock when click hit the canvas — anything inside the menu / HUD inputs is skipped.
         const onCanvas = e.target && e.target.tagName === "CANVAS";
         if (onCanvas && tag !== "INPUT" && tag !== "BUTTON" && tag !== "LABEL") tryLock();
       }
     });
     window.addEventListener("mouseup", (e) => {
-      if (e.button === 0) this._mouse.down = false;
+      if (e.button === 2) this._rmbDown = false;
     });
     window.addEventListener("mousemove", (e) => {
-      const w = window.innerWidth, h = window.innerHeight;
-      // Pre-lock fallback: track viewport position so the menu still works.
-      this._mousePos.x = e.clientX / w;
-      this._mousePos.y = e.clientY / h;
       if (!this._pointerLocked) return;
-      // Locked: use raw movement deltas. Sensitivity slider lives at IRONYARD_SETTINGS.sens.
       const sens = ((window.IRONYARD_SETTINGS && window.IRONYARD_SETTINGS.sens) || 60) / 100;
       const dx = (e.movementX || 0) * sens;
       const dy = (e.movementY || 0) * sens;
-      // ALT held → rotate camera instead of aim. Less sensitive than aim.
-      if (this._altDown) {
-        this.cameraYawDelta   += dx * 0.0016;
-        this.cameraPitchDelta += dy * 0.0012;
-      } else {
-        // Higher divisor = less reactive aim. Scaled by sens slider.
-        this._aimVirtX = clamp(this._aimVirtX + dx / 1500, -1.4, 1.4);
-        this._aimVirtY = clamp(this._aimVirtY - dy / 1500, -1.4, 1.4);
-      }
+      this.cameraYawDelta   += dx * 0.0020;
+      this.cameraPitchDelta += dy * 0.0014;
     });
     window.addEventListener("contextmenu", (e) => e.preventDefault());
+    // Wheel: down = overhead, up = stab. Rate-limited to one trigger per 200ms so a
+    // fast scroll doesn't queue a flurry of swings.
     window.addEventListener("wheel", (e) => {
-      this.zoomDelta += Math.sign(e.deltaY) * 0.4;
+      if (!this._pointerLocked) return;
+      const now = performance.now();
+      if (now - this._wheelLatch < 200) return;
+      this._wheelLatch = now;
+      if (e.deltaY > 0) this._attackQueued = "overhead";
+      else if (e.deltaY < 0) this._attackQueued = "stab";
     }, { passive: true });
   }
 
   _installTouch() {
-    // Two-zone twin-stick. Left half = move stick. Right half = aim stick.
-    // We attach to the document so any touch on the game canvas works.
-    const stickL = makeStick("stick-left", "left");
-    const stickR = makeStick("stick-right", "right");
+    // Two sticks: movement (left), camera (right). Compact so attack pad fits.
+    const stickL = makeStick("stick-left", "left", { size: 130, knob: 56 });
+    const stickR = makeStick("stick-right", "right", { size: 100, knob: 44, label: "look" });
     document.body.append(stickL.el, stickR.el);
 
     const isTouch = () => matchMedia("(hover: none) and (pointer: coarse)").matches;
@@ -120,32 +119,24 @@ export class Input {
       this.touchActive = isTouch();
     };
     updateLayout();
-    // Re-check periodically so sticks appear when the user clicks PLAY.
     setInterval(updateLayout, 250);
     window.addEventListener("resize", updateLayout);
 
-    const handleStart = (zone, e) => {
-      const t = e.changedTouches[0];
-      const stick = zone === "left" ? stickL : stickR;
-      stick.start(t.clientX, t.clientY, t.identifier);
-      e.preventDefault();
+    const findActiveStick = (touches) => {
+      const out = [];
+      for (const stk of [stickL, stickR]) {
+        if (stk.tid == null) continue;
+        for (const t of touches) if (t.identifier === stk.tid) { out.push({ stick: stk, t }); break; }
+      }
+      return out;
     };
 
-    const findActive = (zone, touches) => {
-      const stick = zone === "left" ? stickL : stickR;
-      if (stick.tid == null) return null;
-      for (const t of touches) if (t.identifier === stick.tid) return { stick, t };
-      return null;
-    };
-
-    // Touch sticks must NOT eat menu/button taps. Gate on in-game state and skip when
-    // the touch target is inside any UI element (menu, settings, action buttons).
     const isTouchTargetUI = (target) => {
       let n = target;
       while (n && n !== document.body) {
         const id = n.id || "";
         if (id === "menu" || id === "settings" || id === "settings-btn" ||
-            id === "touch-buttons") return true;
+            id === "touch-buttons" || id === "attack-pad") return true;
         if (n.tagName === "BUTTON" || n.tagName === "INPUT" || n.tagName === "LABEL") return true;
         n = n.parentNode;
       }
@@ -153,10 +144,12 @@ export class Input {
     };
 
     document.addEventListener("touchstart", (e) => {
-      if (!isInGame()) return;                  // menu open → let buttons receive the tap
+      if (!isInGame()) return;
       if (isTouchTargetUI(e.target)) return;
       for (const t of e.changedTouches) {
         const halfX = window.innerWidth / 2;
+        // Left half → movement stick. Right half → camera stick (only the LOWER 60%
+        // of the right half so attack pad above isn't claimed by stick logic).
         if (t.clientX < halfX && stickL.tid == null) {
           stickL.start(t.clientX, t.clientY, t.identifier);
         } else if (t.clientX >= halfX && stickR.tid == null) {
@@ -168,12 +161,9 @@ export class Input {
 
     document.addEventListener("touchmove", (e) => {
       if (!isInGame()) return;
-      for (const stick of [stickL, stickR]) {
-        const a = findActive(stick === stickL ? "left" : "right", e.changedTouches);
-        if (a) a.stick.move(a.t.clientX, a.t.clientY);
-      }
-      // Only prevent default if we are actually using a stick this turn.
-      if (stickL.tid != null || stickR.tid != null) e.preventDefault();
+      const active = findActiveStick(e.changedTouches);
+      for (const a of active) a.stick.move(a.t.clientX, a.t.clientY);
+      if (active.length) e.preventDefault();
     }, { passive: false });
 
     const onEnd = (e) => {
@@ -188,25 +178,23 @@ export class Input {
     this._stickL = stickL;
     this._stickR = stickR;
 
-    // Touch buttons: jump, sprint, block. Hidden until in-game.
+    // Action buttons (jump/sprint/block) — top of right side, compact.
     const buttonRow = document.createElement("div");
     buttonRow.id = "touch-buttons";
     Object.assign(buttonRow.style, {
-      position: "fixed", left: "50%", bottom: "30px",
-      transform: "translateX(-50%)",
-      display: "none", flexDirection: "row", gap: "12px",
+      position: "fixed", right: "12px", top: "12px",
+      display: "none", flexDirection: "row", gap: "8px",
       zIndex: 20, userSelect: "none",
     });
-    // Touch buttons live forever in DOM; only made visible in-game.
     document.body.append(buttonRow);
     const mkBtn = (label, prop, isToggle = false) => {
       const b = document.createElement("div");
       b.textContent = label;
       Object.assign(b.style, {
-        width: "62px", height: "62px", borderRadius: "50%",
+        width: "52px", height: "52px", borderRadius: "50%",
         background: "rgba(0,0,0,0.5)", border: "2px solid #c8a97e",
         color: "#f1d9b3", display: "flex", alignItems: "center", justifyContent: "center",
-        fontSize: "13px", touchAction: "none",
+        fontSize: "11px", touchAction: "none",
       });
       const setActive = (on) => {
         b.style.background = on ? "rgba(200,170,130,0.4)" : "rgba(0,0,0,0.5)";
@@ -222,19 +210,53 @@ export class Input {
       }
       return b;
     };
-    const btnRotL   = mkBtn("◄", "_camRotL");
     const btnJump   = mkBtn("JUMP",  "jump");
     const btnBlock  = mkBtn("BLOCK", "block");
     const btnSprint = mkBtn("RUN",   "sprint");
-    const btnRotR   = mkBtn("►", "_camRotR");
-    buttonRow.append(btnRotL, btnJump, btnBlock, btnSprint, btnRotR);
+    buttonRow.append(btnJump, btnSprint, btnBlock);
 
-    const showButtons = () => {
-      buttonRow.style.display = (this.touchActive && isInGame()) ? "flex" : "none";
+    // Attack pad — 2x2 grid in middle-right, above camera stick.
+    const attackPad = document.createElement("div");
+    attackPad.id = "attack-pad";
+    Object.assign(attackPad.style, {
+      position: "fixed", right: "12px", bottom: "140px",
+      display: "none",
+      gridTemplateColumns: "50px 50px",
+      gridTemplateRows: "50px 50px",
+      gap: "6px",
+      zIndex: 16, userSelect: "none",
+    });
+    document.body.append(attackPad);
+    const mkAtkBtn = (label, kind, color = "#c8a97e") => {
+      const b = document.createElement("div");
+      b.textContent = label;
+      Object.assign(b.style, {
+        width: "50px", height: "50px", borderRadius: "10px",
+        background: "rgba(0,0,0,0.55)", border: `2px solid ${color}`,
+        color: color, fontSize: "10px", letterSpacing: "0.04em",
+        display: "flex", alignItems: "center", justifyContent: "center",
+        textAlign: "center", touchAction: "none",
+      });
+      const fire = (e) => { this._attackQueued = kind; e.preventDefault(); };
+      b.addEventListener("touchstart", fire, { passive: false });
+      b.addEventListener("mousedown", fire);
+      return b;
     };
-    showButtons();
-    setInterval(showButtons, 250);
-    window.addEventListener("resize", showButtons);
+    attackPad.append(
+      mkAtkBtn("OVER", "overhead", "#ffd060"),
+      mkAtkBtn("STAB", "stab",     "#a8e6ff"),
+      mkAtkBtn("◄ SW", "swingL"),
+      mkAtkBtn("SW ►", "swingR"),
+    );
+
+    const showAll = () => {
+      const on = this.touchActive && isInGame();
+      attackPad.style.display = on ? "grid" : "none";
+      buttonRow.style.display = on ? "flex" : "none";
+    };
+    showAll();
+    setInterval(showAll, 250);
+    window.addEventListener("resize", showAll);
   }
 
   // Sample current state and reset edge-triggered things.
@@ -254,58 +276,35 @@ export class Input {
       this.mv.x = mx; this.mv.y = my;
     }
 
-    // Aim — this drives sword direction.
-    if (this._stickR && this._stickR.tid != null) {
-      // Right stick: dx = lateral, dy = forward (-1 = up/forward, 1 = back/down).
-      // Map to aim coords: x=dx, y=-dy (so up on stick = forward/up).
-      this.aim.x = this._stickR.dx;
-      this.aim.y = -this._stickR.dy;
-    } else if (this.touchActive) {
-      // Idle on mobile when no touch — sword rests.
-      this.aim.x *= 0.85;
-      this.aim.y *= 0.85;
-    } else if (this._pointerLocked) {
-      // Locked desktop: aim virtual position is updated in mousemove (delta-based).
-      // Smooth toward virt with a low-pass so jerky mouse motion doesn't snap the sword.
-      const k = Math.min(1, dt * 14);
-      this.aim.x += (this._aimVirtX - this.aim.x) * k;
-      this.aim.y += (this._aimVirtY - this.aim.y) * k;
-    } else {
-      // Pre-lock fallback (menu / first frames): mouse-position aim.
-      const sens = ((window.IRONYARD_SETTINGS && window.IRONYARD_SETTINGS.sens) || 60) / 100;
-      const ax = (this._mousePos.x - 0.5) * 2 * sens;
-      const ay = (0.5 - this._mousePos.y) * 2 * sens;
-      this.aim.x = Math.max(-1.4, Math.min(1.4, ax));
-      this.aim.y = Math.max(-1.4, Math.min(1.4, ay));
-    }
-
-    // Smoothing for sword position; raw vel still gives swing speed via tip motion.
-    const k = Math.min(1, dt * 18);
-    this.aimSmoothed.x += (this.aim.x - this.aimSmoothed.x) * k;
-    this.aimSmoothed.y += (this.aim.y - this.aimSmoothed.y) * k;
-
     if (!this.touchActive) {
       this.sprint = this._keys.has("ShiftLeft") || this._keys.has("ShiftRight");
-      this.block  = this._keys.has("KeyF");
+      // Block: F or RMB held.
+      this.block  = this._keys.has("KeyF") || this._rmbDown;
     }
 
-    // Camera-rotate touch buttons emit deltas while held.
-    if (this._camRotL) this.cameraYawDelta -= dt * 2.2;
-    if (this._camRotR) this.cameraYawDelta += dt * 2.2;
+    // Right stick → camera deltas.
+    if (this._stickR && this._stickR.tid != null) {
+      const dx = this._stickR.dx, dy = this._stickR.dy;
+      this.cameraYawDelta   += dx * dt * 2.6;
+      this.cameraPitchDelta += dy * dt * 1.6;
+    }
+
+    const attackTrigger = this._attackQueued;
+    this._attackQueued = null;
+
     const out = {
       mv: { ...this.mv },
-      aim: { ...this.aim },
-      aimSmoothed: { ...this.aimSmoothed },
       sprint: this.sprint,
       jump: this.jump,
       block: this.block,
       zoomDelta: this.zoomDelta,
       cameraYawDelta: this.cameraYawDelta,
       cameraPitchDelta: this.cameraPitchDelta,
+      attackTrigger,
     };
     this.cameraYawDelta = 0;
     this.cameraPitchDelta = 0;
-    this.jump = false;            // edge consumed
+    this.jump = false;
     this.zoomDelta = 0;
     return out;
   }
@@ -313,41 +312,45 @@ export class Input {
 
 function clamp(x, lo, hi) { return Math.max(lo, Math.min(hi, x)); }
 
-function makeStick(id, side) {
+function makeStick(id, side, opts = {}) {
+  const size = opts.size ?? 150;
+  const knobSize = opts.knob ?? 60;
+  const label = opts.label ?? (side === "left" ? "move" : "look");
   const el = document.createElement("div");
   el.id = id;
   Object.assign(el.style, {
-    position: "fixed", bottom: "20px",
-    [side]: "20px",
-    width: "150px", height: "150px",
+    position: "fixed", bottom: "16px",
+    [side]: "16px",
+    width: size + "px", height: size + "px",
     borderRadius: "50%",
-    background: "rgba(0,0,0,0.35)",
-    border: "2px solid rgba(200,170,130,0.6)",
+    background: "rgba(0,0,0,0.32)",
+    border: "2px solid rgba(200,170,130,0.55)",
     touchAction: "none", zIndex: 15, display: "none",
   });
   const knob = document.createElement("div");
   Object.assign(knob.style, {
     position: "absolute", left: "50%", top: "50%",
-    width: "60px", height: "60px", marginLeft: "-30px", marginTop: "-30px",
-    borderRadius: "50%", background: "rgba(200,170,130,0.6)",
-    boxShadow: "0 0 12px rgba(200,170,130,0.7)",
+    width: knobSize + "px", height: knobSize + "px",
+    marginLeft: -(knobSize / 2) + "px", marginTop: -(knobSize / 2) + "px",
+    borderRadius: "50%", background: "rgba(200,170,130,0.55)",
+    boxShadow: "0 0 10px rgba(200,170,130,0.65)",
   });
   el.append(knob);
-  const label = document.createElement("div");
-  Object.assign(label.style, {
-    position: "absolute", left: "50%", top: "-22px", transform: "translateX(-50%)",
-    color: "#c8a97e", fontSize: "11px", letterSpacing: "0.1em", textTransform: "uppercase",
+  const labelEl = document.createElement("div");
+  Object.assign(labelEl.style, {
+    position: "absolute", left: "50%", top: "-18px", transform: "translateX(-50%)",
+    color: "#c8a97e", fontSize: "10px", letterSpacing: "0.1em", textTransform: "uppercase",
   });
-  label.textContent = side === "left" ? "move" : "sword";
-  el.append(label);
+  labelEl.textContent = label;
+  el.append(labelEl);
 
+  const r = (size - knobSize) / 2;
   const stick = {
     el, knob, side, tid: null, ox: 0, oy: 0, dx: 0, dy: 0,
     start(x, y, id) {
       this.tid = id; this.ox = x; this.oy = y; this.dx = 0; this.dy = 0; this.update(0, 0);
     },
     move(x, y) {
-      const r = 60;
       let dx = (x - this.ox) / r, dy = (y - this.oy) / r;
       const m = Math.hypot(dx, dy);
       if (m > 1) { dx /= m; dy /= m; }

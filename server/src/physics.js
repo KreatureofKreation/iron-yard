@@ -118,13 +118,13 @@ export class PhysicsWorld {
   driveTorso(playerId, dt = 1 / 30) {
     const t = this.torsos.get(playerId);
     if (!t) return;
-    // Pull rotation back toward identity (upright) using a small angular spring.
-    // Rapier exposes body.rotation() as a quaternion (xyzw).
+    // Pull rotation back toward identity (upright) using a strong angular spring so the
+    // visible torso never tips over during ordinary play.
     const r = t.body.rotation();
     // For small angles, the imaginary part of the quaternion approximates axis*angle/2.
-    const ax = -r.x * 24;          // stiffness toward upright
-    const ay = -r.y * 24;
-    const az = -r.z * 24;
+    const ax = -r.x * 60;          // stiffness toward upright
+    const ay = -r.y * 60;
+    const az = -r.z * 60;
     const m = t.body.mass() || 1;
     t.body.applyTorqueImpulse({ x: ax * m * dt, y: ay * m * dt, z: az * m * dt }, true);
   }
@@ -171,10 +171,11 @@ export class PhysicsWorld {
     const h = this.heads.get(playerId);
     if (!h) return;
     const r = h.body.rotation();
-    // Weaker spring than torso so head bobs more freely.
-    const ax = -r.x * 14;
-    const ay = -r.y * 14;
-    const az = -r.z * 14;
+    // Weaker than torso so head bobs more freely, but still strong enough that it
+    // tracks the body during normal motion.
+    const ax = -r.x * 32;
+    const ay = -r.y * 32;
+    const az = -r.z * 32;
     const m = h.body.mass() || 1;
     h.body.applyTorqueImpulse({ x: ax * m * dt, y: ay * m * dt, z: az * m * dt }, true);
   }
