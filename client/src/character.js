@@ -293,9 +293,12 @@ export function buildCharacter({ color = 0x9aa0a8, accent = 0xc8a97e, isLocal = 
     root.add(ring);
   }
 
-  // Animation state.
+  // Animation state + scratch vectors (avoid GC pressure inside animate()).
   const anim = { walkPhase: 0, swayPhase: 0, recoilT: 0 };
   const trailState = { count: 0, idx: 0, lastTipWorld: new THREE.Vector3() };
+  const _twoHandGripTmp = new THREE.Vector3();
+  const _twoHandTargetTmp = new THREE.Vector3();
+  const _downAxis = new THREE.Vector3(0, -1, 0);
 
   // armL/legL/legR aliases — keep external interface stable. Outside callers only need
   // the top-level group to pivot the entire limb.
@@ -355,10 +358,24 @@ export function buildCharacter({ color = 0x9aa0a8, accent = 0xc8a97e, isLocal = 
 
         // Left arm posing.
         if (grip === "two-hand") {
-          armL.rotation.x = -1.0;
-          armL.rotation.y =  0.7;
-          armL.rotation.z =  0.15;
-          elbowL.rotation.x = 0.6;
+          // Two-hand grip — left hand actually reaches across to grip the sword shaft.
+          // Compute world position of the sword grip (= right hand) and IK the left
+          // arm + elbow to put the left hand there. Without this, two-hand weapons
+          // visually only had the right hand on the hilt — left arm just dangled.
+          const gripLocal = _twoHandGripTmp.set(0, -(UPPER_ARM_LEN + FOREARM_LEN), 0);
+          weaponRig.localToWorld(gripLocal);
+          root.worldToLocal(gripLocal);
+          // Slight offset so the LEFT hand sits below + slightly cross-body of the right hand.
+          gripLocal.y -= 0.04;
+          const targetVec = _twoHandTargetTmp.copy(gripLocal).sub(armL.position);
+          const dist = targetVec.length();
+          if (dist > 0.001) {
+            armL.quaternion.setFromUnitVectors(_downAxis, targetVec.normalize());
+          }
+          const reach = UPPER_ARM_LEN + FOREARM_LEN;
+          const ratio = Math.min(1, dist / Math.max(0.01, reach));
+          const bend = Math.acos(ratio);
+          elbowL.rotation.x = 0.20 + bend * 0.55;
         } else if (grip === "shield") {
           // Iron-Thorn middle-guard default: shield extended forward at mid-torso
           // height, "decent gap from the body". Elbow tucked so face is covered.
@@ -454,20 +471,28 @@ export function buildCharacter({ color = 0x9aa0a8, accent = 0xc8a97e, isLocal = 
         //   [0.60 .. 1.00] = RECOVERY — unwind to neutral
         if (attackT >= 0 && attackT <= 1) {
           let crouch = 0, surge = 0, recoil = 0;
+          // Spine arc — back curls back during windup (like drawing a bow), thrusts
+          // forward during release, settles in recovery.
+          let spineBend = 0;
           if (attackT < 0.30) {
             const w = attackT / 0.30;
             crouch = -0.10 * Math.sin(w * Math.PI * 0.5);
+            spineBend = -0.18 * w;                // arch back during windup
           } else if (attackT < 0.60) {
             const w = (attackT - 0.30) / 0.30;
             const arc = Math.sin(w * Math.PI);
             crouch = 0.05 * arc;
-            surge  = 0.14 * arc;
+            surge  = 0.20 * arc;                  // bigger forward dive
+            spineBend = 0.32 * arc;               // back curls forward through strike
           } else {
             const w = (attackT - 0.60) / 0.40;
             recoil = 0.08 * (1 - w);
+            spineBend = 0.10 * (1 - w);           // settle back
           }
           root.position.y += crouch;
-          torso.rotation.x += surge - recoil;
+          torso.rotation.x += surge - recoil + spineBend;
+          // Pelvis tilts opposite to spine for a real S-curve through the back.
+          pelvis.rotation.x += -spineBend * 0.4;
 
           let dir = 0;
           if (attackType === "swingR" || attackType === "swingL" || attackType === "overhead") {
@@ -526,16 +551,9 @@ export function buildCharacter({ color = 0x9aa0a8, accent = 0xc8a97e, isLocal = 
             head.rotation.x += 0.14 * tracking;
           }
 
-          // Left arm reacts too — supports the swing for two-hand grip, drives
-          // weight forward for one-hand. Visible counter-motion.
-          if (grip === "two-hand") {
-            // Both hands grip the weapon: left arm tracks the right shoulder twist.
-            const t2 = attackT < 0.60 ? (attackT - 0.30) / 0.30 : (1 - (attackT - 0.60) / 0.40);
-            const t2c = Math.max(0, Math.min(1, t2));
-            armL.rotation.x = -1.0 - 0.30 * t2c;
-            armL.rotation.z =  0.15 + 0.20 * t2c * (dir || 1);
-          } else if (grip !== "shield") {
-            // One-hand: opposite arm swings forward as counterweight.
+          // Left arm reacts too — but ONLY when grip is one-hand (shield + two-hand
+          // arm poses are driven by their own logic above and shouldn't be wiped here).
+          if (grip !== "two-hand" && grip !== "shield") {
             const t2 = attackT < 0.60 ? (attackT - 0.30) / 0.30 : (1 - (attackT - 0.60) / 0.40);
             const t2c = Math.max(0, Math.min(1, t2));
             armL.rotation.x = -0.6 * t2c;
