@@ -166,8 +166,11 @@ wss.on("connection", (sock) => {
       return;
     }
 
-    // Spectators can chat (no game inputs).
+    // Spectators can chat (no game inputs). Same rate-limit.
     if (!player && sock._spectator && msg.t === "chat" && typeof msg.text === "string") {
+      const now = Date.now();
+      if (sock._lastChatAt && now - sock._lastChatAt < 500) return;
+      sock._lastChatAt = now;
       const text = msg.text.slice(0, 200);
       broadcast({ t: "chat", from: 0, name: "[spectator]", text });
       return;
@@ -186,6 +189,10 @@ wss.on("connection", (sock) => {
     }
 
     if (msg.t === "chat" && typeof msg.text === "string") {
+      // Rate-limit: 1 message per 500ms per socket.
+      const now = Date.now();
+      if (sock._lastChatAt && now - sock._lastChatAt < 500) return;
+      sock._lastChatAt = now;
       const text = msg.text.slice(0, 200);
       // Slash-commands. Local to this server; anyone can run them.
       if (text.startsWith("/")) {
