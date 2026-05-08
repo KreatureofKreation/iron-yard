@@ -318,6 +318,12 @@ net.on("snap", (m) => {
 
   // Server-authoritative arena props.
   if (m.props) syncServerProps(m.props);
+  // Track latest sword positions for dropped-halo rendering.
+  for (const p of m.players) {
+    if (p.id === state.myId) continue;
+    const r = state.remotes.get(p.id);
+    if (r) r._lastTip = p.weaponTip;
+  }
 
   // Match state.
   if (m.match) {
@@ -799,6 +805,7 @@ function frame(t) {
 
   HUD.setStance(stanceLabel(inp));
   updateNameplates();
+  updateDroppedSwordHalos();
   tickFallingProps(dt);
 
   // Lock-hint overlay: visible only after we've joined and pointer isn't locked.
@@ -898,6 +905,34 @@ function interpolateRemote(r, renderTime) {
     r.rig.root.position.y = 0.0;
   } else {
     r.rig.root.position.y = pos.y;
+  }
+}
+
+// Halo over each dropped (unowned) enemy sword.
+const swordHaloMap = new Map();   // remote.id -> Mesh
+function updateDroppedSwordHalos() {
+  const seen = new Set();
+  for (const [id, r] of state.remotes) {
+    const dropped = !r.alive
+      || (r.stunMsLeft || 0) > 0
+      || (r.disarmedMsLeft || 0) > 0;
+    if (!dropped || !r._lastTip) continue;
+    seen.add(id);
+    let halo = swordHaloMap.get(id);
+    if (!halo) {
+      const geo = new THREE.RingGeometry(0.20, 0.32, 24);
+      const mat = new THREE.MeshBasicMaterial({ color: 0x9adfff, transparent: true, opacity: 0.55, side: THREE.DoubleSide });
+      halo = new THREE.Mesh(geo, mat);
+      halo.rotation.x = -Math.PI / 2;
+      scene.add(halo);
+      swordHaloMap.set(id, halo);
+    }
+    const t = r._lastTip;
+    halo.position.set(t.x, 0.06, t.z);
+    halo.rotation.z = (performance.now() / 1000) * 1.5;
+  }
+  for (const [id, halo] of swordHaloMap) {
+    if (!seen.has(id)) { scene.remove(halo); swordHaloMap.delete(id); }
   }
 }
 
