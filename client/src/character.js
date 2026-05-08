@@ -351,60 +351,53 @@ export function buildCharacter({ color = 0x9aa0a8, accent = 0xc8a97e, isLocal = 
 
         // Attack anticipation + impact — animation principle of squash/stretch.
         // Wind-up dips and twists away; strike apex pops upward; recovery settles.
+        // Phase-driven body anim (matches main.js attackT mapping):
+        //   [0.00 .. 0.30] = WINDUP   — crouch + chamber twist
+        //   [0.30 .. 0.60] = RELEASE  — strike pop + foot stomp
+        //   [0.60 .. 1.00] = RECOVERY — slow unwind back to neutral
         if (attackT >= 0 && attackT <= 1) {
-          // Pose-based body offsets, smooth across phases.
-          let crouch = 0;     // negative Y (dip) during wind-up
-          let surge  = 0;     // positive forward lean spike during strike apex
-          let recoil = 0;     // negative forward lean during follow-through (heavy hit)
-          if (attackT < 0.22) {
-            // Wind-up coil — body squats and shoulders rotate away.
-            const w = attackT / 0.22;        // 0..1 across wind-up
-            crouch = -0.08 * Math.sin(w * Math.PI * 0.5);
-          } else if (attackT < 0.55) {
-            // Strike apex — explode upward + forward.
-            const w = (attackT - 0.22) / 0.33;
+          let crouch = 0, surge = 0, recoil = 0;
+          if (attackT < 0.30) {
+            const w = attackT / 0.30;            // 0..1 across windup
+            crouch = -0.10 * Math.sin(w * Math.PI * 0.5);    // dip down
+          } else if (attackT < 0.60) {
+            const w = (attackT - 0.30) / 0.30;   // 0..1 across release
             const arc = Math.sin(w * Math.PI);
-            crouch = 0.04 * arc;             // small rise (visible commit)
-            surge  = 0.10 * arc;             // forward dip into the swing
-          } else if (attackT < 0.85) {
-            // Follow-through — continue forward, slight downward
-            const w = (attackT - 0.55) / 0.30;
-            recoil = 0.05 * (1 - w);
+            crouch = 0.05 * arc;                  // pop up at apex
+            surge  = 0.14 * arc;                  // dive forward through strike
+          } else {
+            const w = (attackT - 0.60) / 0.40;   // 0..1 across recovery
+            recoil = 0.08 * (1 - w);              // sustained forward lean fades back
           }
           root.position.y += crouch;
           torso.rotation.x += surge - recoil;
 
-          // Chest twist — chambers away during wind-up, snaps toward strike at apex.
-          // Applied to torso rotation.y (chest mesh only) so it reads as a visible
-          // shoulder turn without breaking the weaponRig's IK aiming.
+          // Chest twist — chambers away during windup, snaps through during release,
+          // unwinds during recovery.
           let dir = 0;
           if (attackType === "swingR" || attackType === "swingL" || attackType === "overhead") {
             dir = attackType === "swingL" ? -1 : 1;
-            const twist = attackT < 0.22
-              ? -dir * 0.30 * (attackT / 0.22)
-              : attackT < 0.55
-                ? dir * 0.40 * Math.sin(((attackT - 0.22) / 0.33) * Math.PI)
-                : 0;
+            const twist = attackT < 0.30
+              ? -dir * 0.35 * (attackT / 0.30)
+              : attackT < 0.60
+                ? -dir * 0.35 + dir * 0.85 * ((attackT - 0.30) / 0.30)
+                : dir * 0.50 * (1 - (attackT - 0.60) / 0.40);
             torso.rotation.y = twist;
           } else if (attackType === "stab") {
-            // Thrust — head leads, body lunges forward at apex.
-            head.rotation.x += attackT < 0.22 ? -0.12 * (attackT / 0.22)
-                              : attackT < 0.55 ? 0.12 * (1 - (attackT - 0.22) / 0.33) : 0;
+            // Thrust — head leads, body lunges forward at release.
+            head.rotation.x += attackT < 0.30 ? -0.14 * (attackT / 0.30)
+                              : attackT < 0.60 ? 0.14 * (1 - (attackT - 0.30) / 0.30) : 0;
           }
 
-          // Lead-foot stomp on strike apex (Half-Sword-style power-transfer plant).
-          // Lead foot is opposite-side from strike direction (rotate INTO the swing).
-          // dir>0 = swingR (strike to right) → left foot leads. dir<0 → right foot leads.
-          // Stab/overhead default lead = right foot.
+          // Lead-foot stomp during release phase (0.30 .. 0.60).
           const leadIsLeft = dir > 0;
           if (attackT > 0.30 && attackT < 0.65) {
             const w = (attackT - 0.30) / 0.35;
-            const stomp = Math.sin(w * Math.PI);                  // 0..1..0
-            // Slam foot down during apex (negative Y on lifted leg) then plant.
+            const stomp = Math.sin(w * Math.PI);
             if (leadIsLeft) {
-              legL.thigh.rotation.x = -0.55 * stomp;              // forward planted leg
+              legL.thigh.rotation.x = -0.55 * stomp;
               legL.shin.rotation.x  =  0.30 * stomp;
-              legR.thigh.rotation.x =  0.20 * stomp;              // back leg drives
+              legR.thigh.rotation.x =  0.20 * stomp;
               legR.shin.rotation.x  =  0.10 * stomp;
             } else {
               legR.thigh.rotation.x = -0.55 * stomp;
@@ -412,17 +405,16 @@ export function buildCharacter({ color = 0x9aa0a8, accent = 0xc8a97e, isLocal = 
               legL.thigh.rotation.x =  0.20 * stomp;
               legL.shin.rotation.x  =  0.10 * stomp;
             }
-            // Whole-body sinks 4cm into the plant for visceral weight.
-            root.position.y -= 0.04 * stomp;
+            root.position.y -= 0.05 * stomp;
           }
 
-          // Head tracks the strike — eyes follow the sword.
-          if (dir !== 0 && attackT > 0.15 && attackT < 0.75) {
-            const w = (attackT - 0.15) / 0.60;
-            const tracking = Math.sin(w * Math.PI);                // peaks mid-swing
-            head.rotation.y = -dir * 0.25 * tracking;              // turn into the strike
-            helm.rotation.y = -dir * 0.25 * tracking;
-            head.rotation.x += 0.10 * tracking;                    // slight forward nod at apex
+          // Head tracks the strike — peaks mid-release.
+          if (dir !== 0 && attackT > 0.20 && attackT < 0.75) {
+            const w = (attackT - 0.20) / 0.55;
+            const tracking = Math.sin(w * Math.PI);
+            head.rotation.y = -dir * 0.30 * tracking;
+            helm.rotation.y = -dir * 0.30 * tracking;
+            head.rotation.x += 0.12 * tracking;
           }
         } else {
           torso.rotation.y = 0;

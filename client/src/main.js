@@ -168,152 +168,121 @@ function restLocal(now, mvSpeed = 0, weaponKey = "arming", grip = "one-hand") {
 }
 
 const REST = REST_LOCAL_BASE;
-// Spear paths — HEMA polearm style. Tip default forward (Mittel/Vor). Stab is primary;
-// swings are wide shaft sweeps; overhead is a high-Ober chop. Reach extends to spear length.
+
+// =============================================================================
+// Phase-based attack model (Mordhau / Chivalry 2 style):
+//   windup    — wind weapon back to chamber pose. Slow, broadcasts the strike.
+//                No damage. Eased-in (slow start, accelerating).
+//   release   — weapon sweeps from chamber → contact → end. Fast, deals damage.
+//                Eased-out (fast start, decelerating into contact).
+//   recovery  — weapon settles from end pose back to rest. Slower, vulnerable
+//                window. Eased-in-out.
+// Timings: per weapon. Heavier weapons → longer windup + longer recovery, same
+// release speed (release = active hit window).
+// =============================================================================
+const PHASE_BASE = {
+  swing:    { windup: 320, release: 130, recovery: 350 },
+  overhead: { windup: 380, release: 150, recovery: 400 },
+  stab:     { windup: 240, release: 110, recovery: 260 },
+};
+function phasesFor(weaponKey, type) {
+  const base = type === "stab" ? PHASE_BASE.stab : type === "overhead" ? PHASE_BASE.overhead : PHASE_BASE.swing;
+  let scale = 1.0;
+  if (weaponKey === "longsword") scale = 1.20;
+  else if (weaponKey === "mace") scale = 1.35;
+  else if (weaponKey === "spear") scale = type === "stab" ? 0.90 : 1.20;
+  else if (weaponKey === "swordshield") scale = 0.95;
+  return {
+    windup:   Math.round(base.windup   * scale),
+    release:  Math.round(base.release  * scale * 0.95),
+    recovery: Math.round(base.recovery * scale),
+  };
+}
+
 const SPEAR_REST = REST_BY_KEY.spear;
-const SPEAR_PATHS = {
+const ATTACK_POSES_SPEAR = {
   stab: {
-    duration: 340,
-    wpts: [
-      { t: 0.00, x: SPEAR_REST.x, y: SPEAR_REST.y, z: SPEAR_REST.z },
-      { t: 0.20, x: 0.20,         y: 1.55,         z: 0.10 },                  // coil back tight
-      { t: 0.50, x: 0.20,         y: 1.55,         z: 2.70 },                  // full Langort reach
-      { t: 0.80, x: 0.20,         y: 1.50,         z: 0.50 },
-      { t: 1.00, x: SPEAR_REST.x, y: SPEAR_REST.y, z: SPEAR_REST.z },
-    ],
+    chamber: { x: 0.20, y: 1.55, z: 0.10 },     // coiled back, ready to thrust
+    contact: { x: 0.20, y: 1.55, z: 1.50 },     // mid-release
+    end:     { x: 0.20, y: 1.55, z: 2.70 },     // full Langort
   },
   overhead: {
-    duration: 580,
-    wpts: [
-      { t: 0.00, x: SPEAR_REST.x, y: SPEAR_REST.y, z: SPEAR_REST.z },
-      { t: 0.22, x: 0.50,         y: 2.65,         z: -0.40 },                  // raise high
-      { t: 0.55, x: 0.20,         y: 1.10,         z: 1.95 },                   // chop down + far forward
-      { t: 0.82, x: 0.20,         y: 0.85,         z: 0.80 },
-      { t: 1.00, x: SPEAR_REST.x, y: SPEAR_REST.y, z: SPEAR_REST.z },
-    ],
+    chamber: { x: 0.50, y: 2.65, z: -0.40 },
+    contact: { x: 0.20, y: 1.50, z:  1.30 },
+    end:     { x: 0.20, y: 1.10, z:  1.95 },
   },
   swingR: {
-    duration: 500,
-    wpts: [
-      { t: 0.00, x: SPEAR_REST.x, y: SPEAR_REST.y, z: SPEAR_REST.z },
-      { t: 0.22, x: -1.10,        y: 1.55,         z:  0.50 },                  // wind hard left
-      { t: 0.55, x:  0.10,        y: 1.50,         z:  2.30 },                  // sweep extended
-      { t: 0.80, x:  1.40,        y: 1.10,         z:  0.50 },                  // far right follow-through
-      { t: 1.00, x: SPEAR_REST.x, y: SPEAR_REST.y, z: SPEAR_REST.z },
-    ],
+    chamber: { x: -1.10, y: 1.55, z:  0.50 },
+    contact: { x:  0.10, y: 1.50, z:  2.30 },
+    end:     { x:  1.40, y: 1.10, z:  0.50 },
   },
   swingL: {
-    duration: 500,
-    wpts: [
-      { t: 0.00, x: SPEAR_REST.x, y: SPEAR_REST.y, z: SPEAR_REST.z },
-      { t: 0.22, x:  1.10,        y: 1.55,         z:  0.50 },
-      { t: 0.55, x: -0.10,        y: 1.50,         z:  2.30 },
-      { t: 0.80, x: -1.40,        y: 1.10,         z:  0.50 },
-      { t: 1.00, x: SPEAR_REST.x, y: SPEAR_REST.y, z: SPEAR_REST.z },
-    ],
+    chamber: { x:  1.10, y: 1.55, z:  0.50 },
+    contact: { x: -0.10, y: 1.50, z:  2.30 },
+    end:     { x: -1.40, y: 1.10, z:  0.50 },
   },
 };
+const SPEAR_PATHS = ATTACK_POSES_SPEAR;
 
 // Mace — heavy committed strikes per ARMA discussion. Primary is sideways horizontal
 // blow (prevents slipping). Overhead is the natural finisher. Stab is a weak forward
 // jab with the head (the mace has no point — included for completeness/utility).
 const MACE_REST = REST_BY_KEY.mace;
-const MACE_PATHS = {
-  // Heavy committed sideways blows. Bigger arcs than sword — momentum-driven.
+const ATTACK_POSES_MACE = {
   swingR: {
-    duration: 540,
-    wpts: [
-      { t: 0.00, x: MACE_REST.x, y: MACE_REST.y, z: MACE_REST.z },
-      { t: 0.22, x: -1.00,       y: 1.80,        z: -0.20 },                       // wind way back over left shoulder
-      { t: 0.52, x:  0.15,       y: 1.45,        z:  1.40 },                       // heavy strike apex
-      { t: 0.80, x:  1.20,       y: 0.75,        z:  0.20 },                       // crashes through to right hip
-      { t: 1.00, x: MACE_REST.x, y: MACE_REST.y, z: MACE_REST.z },
-    ],
+    chamber: { x: -1.00, y: 1.80, z: -0.20 },     // wind way back over left shoulder
+    contact: { x:  0.15, y: 1.45, z:  1.40 },
+    end:     { x:  1.20, y: 0.75, z:  0.20 },     // crashes through to right hip
   },
   swingL: {
-    duration: 540,
-    wpts: [
-      { t: 0.00, x: MACE_REST.x, y: MACE_REST.y, z: MACE_REST.z },
-      { t: 0.22, x:  1.00,       y: 1.80,        z: -0.20 },
-      { t: 0.52, x: -0.15,       y: 1.45,        z:  1.40 },
-      { t: 0.80, x: -1.20,       y: 0.75,        z:  0.20 },
-      { t: 1.00, x: MACE_REST.x, y: MACE_REST.y, z: MACE_REST.z },
-    ],
+    chamber: { x:  1.00, y: 1.80, z: -0.20 },
+    contact: { x: -0.15, y: 1.45, z:  1.40 },
+    end:     { x: -1.20, y: 0.75, z:  0.20 },
   },
-  // Skull-crusher overhead — load way up, drop it through center.
   overhead: {
-    duration: 640,
-    wpts: [
-      { t: 0.00, x: MACE_REST.x, y: MACE_REST.y, z: MACE_REST.z },
-      { t: 0.25, x:  0.55,       y: 2.70,        z: -0.50 },                       // sky-high wind
-      { t: 0.55, x:  0.15,       y: 1.10,        z:  1.30 },                       // smash apex
-      { t: 0.85, x: -0.20,       y: 0.10,        z:  0.95 },                       // ground follow-through
-      { t: 1.00, x: MACE_REST.x, y: MACE_REST.y, z: MACE_REST.z },
-    ],
+    chamber: { x:  0.55, y: 2.70, z: -0.50 },     // sky-high
+    contact: { x:  0.15, y: 1.10, z:  1.30 },
+    end:     { x: -0.20, y: 0.10, z:  0.95 },     // ground follow-through
   },
   stab: {
-    duration: 400,
-    wpts: [
-      { t: 0.00, x: MACE_REST.x, y: MACE_REST.y, z: MACE_REST.z },
-      { t: 0.25, x: 0.30,        y: 1.40,        z: -0.05 },
-      { t: 0.55, x: 0.30,        y: 1.40,        z:  1.30 },
-      { t: 0.80, x: 0.30,        y: 1.45,        z:  0.20 },
-      { t: 1.00, x: MACE_REST.x, y: MACE_REST.y, z: MACE_REST.z },
-    ],
+    chamber: { x: 0.30, y: 1.40, z: -0.05 },
+    contact: { x: 0.30, y: 1.40, z:  0.80 },
+    end:     { x: 0.30, y: 1.40, z:  1.30 },
   },
 };
+const MACE_PATHS = ATTACK_POSES_MACE;
 
 function pathsFor(weaponKey) {
   if (weaponKey === "spear") return SPEAR_PATHS;
   if (weaponKey === "mace")  return MACE_PATHS;
   return ATTACK_PATHS;
 }
-const ATTACK_PATHS = {
-  // Mittelhau cross-cut left → right. Extreme wind across body, full extension forward,
-  // sweeping follow-through past hip. Bigger arcs read as committed swings.
+// Pose triplets per attack: (chamber = peak of windup, contact = start of release,
+// end = end of release / start of recovery). Used together with phasesFor() above.
+const ATTACK_POSES_SWORD = {
   swingR: {
-    duration: 460,
-    wpts: [
-      { t: 0.00, x: REST.x,        y: REST.y,        z: REST.z },
-      { t: 0.20, x: -0.95,         y: 1.65,          z: -0.30 },         // wind: deep left over shoulder
-      { t: 0.48, x:  0.20,         y: 1.55,          z:  1.70 },         // strike apex extended forward
-      { t: 0.72, x:  1.15,         y: 0.85,          z:  0.30 },         // follow-through past right hip
-      { t: 1.00, x: REST.x,        y: REST.y,        z: REST.z },
-    ],
+    chamber: { x: -0.95, y: 1.65, z: -0.30 },     // deep left over shoulder, sword cocked back
+    contact: { x:  0.20, y: 1.55, z:  1.70 },     // extended forward through center
+    end:     { x:  1.15, y: 0.85, z:  0.30 },     // past right hip
   },
   swingL: {
-    duration: 460,
-    wpts: [
-      { t: 0.00, x: REST.x,        y: REST.y,        z: REST.z },
-      { t: 0.20, x:  0.95,         y: 1.65,          z: -0.30 },
-      { t: 0.48, x: -0.20,         y: 1.55,          z:  1.70 },
-      { t: 0.72, x: -1.15,         y: 0.85,          z:  0.30 },
-      { t: 1.00, x: REST.x,        y: REST.y,        z: REST.z },
-    ],
+    chamber: { x:  0.95, y: 1.65, z: -0.30 },
+    contact: { x: -0.20, y: 1.55, z:  1.70 },
+    end:     { x: -1.15, y: 0.85, z:  0.30 },
   },
-  // Oberhau — load above the head, drive through chest to ankle on the far side.
   overhead: {
-    duration: 560,
-    wpts: [
-      { t: 0.00, x: REST.x,        y: REST.y,        z: REST.z },
-      { t: 0.22, x:  0.55,         y: 2.65,          z: -0.45 },         // wind high + back
-      { t: 0.50, x:  0.15,         y: 1.30,          z:  1.55 },         // strike apex forward at chest
-      { t: 0.78, x: -0.30,         y: 0.20,          z:  1.10 },         // chop through to opposite ankle
-      { t: 1.00, x: REST.x,        y: REST.y,        z: REST.z },
-    ],
+    chamber: { x:  0.55, y: 2.65, z: -0.45 },     // sky-high wind
+    contact: { x:  0.15, y: 1.30, z:  1.55 },     // forward at chest height
+    end:     { x: -0.30, y: 0.20, z:  1.10 },     // chopped through to ground
   },
-  // Stab — coil back hard, drive forward with full body extension.
   stab: {
-    duration: 380,
-    wpts: [
-      { t: 0.00, x: REST.x,        y: REST.y,        z: REST.z },
-      { t: 0.22, x:  0.10,         y: 1.10,          z:  0.05 },         // pull back tight to body
-      { t: 0.50, x:  0.30,         y: 1.55,          z:  2.20 },         // thrust extended
-      { t: 0.78, x:  0.20,         y: 1.20,          z:  0.30 },
-      { t: 1.00, x: REST.x,        y: REST.y,        z: REST.z },
-    ],
+    chamber: { x:  0.10, y: 1.10, z:  0.05 },     // coiled back tight to body
+    contact: { x:  0.25, y: 1.40, z:  1.20 },     // mid-release passing through
+    end:     { x:  0.30, y: 1.55, z:  2.20 },     // full thrust extension
   },
 };
+// Legacy alias for code that still references ATTACK_PATHS during the transition.
+const ATTACK_PATHS = ATTACK_POSES_SWORD;
 
 // Per-segment easing — smoother arcs than straight linear interp. Each segment of
 // an attack gets its own curve so the wind-up coils slowly, the apex rips fast,
@@ -357,27 +326,80 @@ function catmullRom(p0, p1, p2, p3, t) {
   );
 }
 
-function attackPathLocal(type, t, weaponKey = "arming") {
-  const paths = pathsFor(weaponKey);
-  const path = paths[type] ?? ATTACK_PATHS[type];
-  if (!path) return REST_LOCAL_BASE;
-  const w = path.wpts;
-  for (let i = 0; i < w.length - 1; i++) {
-    if (t <= w[i + 1].t) {
-      const a = w[i], b = w[i + 1];
-      const u = (t - a.t) / Math.max(1e-6, b.t - a.t);
-      const ue = segEase(i)(Math.max(0, Math.min(1, u)));
-      // Catmull-Rom through 4 control points — true curved arc, no piecewise corners.
-      const pPrev = w[i - 1] || w[i];
-      const pNext = w[i + 2] || w[i + 1];
+// Phase-based path sampler. elapsed is ms since attack started. weapon-scaled phase
+// durations and per-attack chamber/contact/end poses combine to drive Mordhau-style
+// windup → release → recovery animation.
+function attackPathPhased(type, elapsed, weaponKey, restPos) {
+  const poses = (pathsFor(weaponKey))[type];
+  if (!poses) return restPos;
+  const phases = phasesFor(weaponKey, type);
+
+  if (elapsed < phases.windup) {
+    // Windup — slow buildup from rest to chamber.
+    const u = elapsed / phases.windup;
+    const ue = easeFn("easeInSlow")(u);
+    return lerp3(restPos, poses.chamber, ue);
+  }
+  const releaseElapsed = elapsed - phases.windup;
+  if (releaseElapsed < phases.release) {
+    // Release — fast snap from chamber → contact → end via Catmull-Rom for smooth arc.
+    const u = releaseElapsed / phases.release;
+    const ue = easeFn("easeOutFast")(u);
+    // Sample Catmull-Rom on (chamber, contact, end) plus virtual ghost points.
+    const a = poses.chamber, b = poses.contact, c = poses.end;
+    // First half: chamber → contact. Second half: contact → end. Apply Catmull-Rom
+    // segment by segment using the neighbor as a tangent guide.
+    if (ue <= 0.5) {
+      const u2 = ue / 0.5;
       return {
-        x: catmullRom(pPrev.x, a.x, b.x, pNext.x, ue),
-        y: catmullRom(pPrev.y, a.y, b.y, pNext.y, ue),
-        z: catmullRom(pPrev.z, a.z, b.z, pNext.z, ue),
+        x: catmullRom(a.x, a.x, b.x, c.x, u2),
+        y: catmullRom(a.y, a.y, b.y, c.y, u2),
+        z: catmullRom(a.z, a.z, b.z, c.z, u2),
+      };
+    } else {
+      const u2 = (ue - 0.5) / 0.5;
+      return {
+        x: catmullRom(a.x, b.x, c.x, c.x, u2),
+        y: catmullRom(a.y, b.y, c.y, c.y, u2),
+        z: catmullRom(a.z, b.z, c.z, c.z, u2),
       };
     }
   }
-  return w[w.length - 1];
+  const recoveryElapsed = releaseElapsed - phases.release;
+  if (recoveryElapsed < phases.recovery) {
+    // Recovery — settle from end pose back to rest.
+    const u = recoveryElapsed / phases.recovery;
+    const ue = easeFn("easeInOut")(u);
+    return lerp3(poses.end, restPos, ue);
+  }
+  return restPos;
+}
+
+function lerp3(a, b, u) {
+  return {
+    x: a.x + (b.x - a.x) * u,
+    y: a.y + (b.y - a.y) * u,
+    z: a.z + (b.z - a.z) * u,
+  };
+}
+
+// Returns total ms duration for an attack on a given weapon.
+function attackTotalDuration(weaponKey, type) {
+  const p = phasesFor(weaponKey, type);
+  return p.windup + p.release + p.recovery;
+}
+
+// Returns the active phase name + normalized progress within phase (0..1).
+function attackPhaseInfo(state) {
+  if (!state.attack) return { phase: "rest", phaseT: 0, totalT: 0 };
+  const elapsed = performance.now() - state.attack.start;
+  const phases = phasesFor(state.attack.weaponKey || state.weaponKey, state.attack.type);
+  if (elapsed < phases.windup) return { phase: "windup",   phaseT: elapsed / phases.windup, totalT: elapsed };
+  const re = elapsed - phases.windup;
+  if (re < phases.release) return { phase: "release",  phaseT: re / phases.release, totalT: elapsed };
+  const rc = re - phases.release;
+  if (rc < phases.recovery) return { phase: "recovery", phaseT: rc / phases.recovery, totalT: elapsed };
+  return { phase: "rest", phaseT: 1, totalT: elapsed };
 }
 
 // Convert a player-local point to world space using yaw.
@@ -395,14 +417,14 @@ function localToWorld(pos, yaw, local, out = new THREE.Vector3()) {
 // Resolve the current weapon-tip target this frame from attack state (or breathing rest).
 function computeAttackTipTarget(state, pos, yaw, mvSpeed, weaponKey, grip, out) {
   const now = performance.now();
-  let local = restLocal(now, mvSpeed, weaponKey, grip);
+  const restPos = restLocal(now, mvSpeed, weaponKey, grip);
+  let local = restPos;
   if (state.attack && state.attack.type) {
     const elapsed = now - state.attack.start;
-    const t = elapsed / state.attack.duration;
-    if (t >= 1) {
+    if (elapsed >= state.attack.duration) {
       state.attack = null;
     } else {
-      local = attackPathLocal(state.attack.type, t, weaponKey);
+      local = attackPathPhased(state.attack.type, elapsed, weaponKey, restPos);
     }
   }
   return localToWorld(pos, yaw, local, out);
@@ -910,13 +932,16 @@ function frame(t) {
 
     // Attack state — start a new attack on edge trigger if no active attack (or the
     // active one is past its 60% mark, so successive clicks chain).
+    // Phase-based attack trigger. Mordhau/Chivalry-style:
+    //   windup → release → recovery. Each weapon has its own phase timings.
+    // Allow new attack to interrupt at any time (combo / cancel).
     if (inp.attackTrigger) {
-      const paths = pathsFor(state.weaponKey);
-      const dur = (paths[inp.attackTrigger] ?? ATTACK_PATHS[inp.attackTrigger])?.duration ?? 380;
-      // Heavier weapons take longer to arc. Mass scales duration up to ~1.5x.
-      const wMassDur = (RUNTIME.weapon.mass || 1.0);
-      const scaledDur = Math.round(dur * (0.85 + 0.18 * Math.min(2.0, wMassDur)));
-      state.attack = { type: inp.attackTrigger, start: performance.now(), duration: scaledDur };
+      state.attack = {
+        type: inp.attackTrigger,
+        weaponKey: state.weaponKey,
+        start: performance.now(),
+        duration: attackTotalDuration(state.weaponKey, inp.attackTrigger),
+      };
     }
 
     // Compute target weapon tip from attack state (or rest). Send target to server,
@@ -956,7 +981,20 @@ function frame(t) {
       torsoRot: state.local.torsoRot,
       headRot:  state.local.headRot,
       playerYaw: state.local.yaw,
-      attackT:  state.attack ? Math.min(1, (performance.now() - state.attack.start) / state.attack.duration) : -1,
+      // Map (phase, phaseT) onto a stable 0..1 "global attackT" so the rig's body
+      // anim cues (windup crouch / strike pop / recovery unwind) hit consistently
+      // regardless of weapon-specific phase durations:
+      //   [0.00 .. 0.30] = windup (anticipation crouch + chamber twist)
+      //   [0.30 .. 0.60] = release (lead-foot stomp + impact pop)
+      //   [0.60 .. 1.00] = recovery
+      attackT: (() => {
+        if (!state.attack) return -1;
+        const info = attackPhaseInfo(state);
+        if (info.phase === "windup")   return info.phaseT * 0.30;
+        if (info.phase === "release")  return 0.30 + info.phaseT * 0.30;
+        if (info.phase === "recovery") return 0.60 + info.phaseT * 0.40;
+        return -1;
+      })(),
       attackType: state.attack ? state.attack.type : null,
     });
     state.rig.setInvuln((state.local.invulnMs || 0) > 0, performance.now() / 1000);
@@ -1398,16 +1436,23 @@ function stanceLabel(inp) {
   if ((state.local.commitMsLeft || 0) > 0) return "★ COMMIT ★";
   if (inp.block) return "— guard —";
   if (state.attack && state.attack.type) {
-    return `— ${state.attack.type} —`;
+    const info = attackPhaseInfo(state);
+    return `— ${state.attack.type} · ${info.phase} —`;
   }
   return "— at rest —";
 }
 
 // Map current attack state to a "vertical aim" hint that drives the rig's shoulder
 // lift animation (overhead = lifted shoulder, stab = neutral, swings = neutral).
+// Boosted during windup (drawing back) for overhead.
 function verAimFromAttack(att) {
   if (!att) return 0;
-  if (att.type === "overhead") return 0.6;
+  if (att.type === "overhead") {
+    const info = attackPhaseInfo(state);
+    if (info.phase === "windup") return 0.4 + info.phaseT * 0.4;   // shoulder rises through windup
+    if (info.phase === "release") return 0.6 - info.phaseT * 0.6;  // drops through release
+    return 0.0;
+  }
   if (att.type === "stab")     return 0.0;
   return 0.1;
 }
