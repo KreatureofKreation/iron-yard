@@ -2,7 +2,7 @@
 export const CONFIG = {
   PORT: Number(process.env.PORT) || 8080,
   TICK_HZ: 30,                 // server simulation rate
-  SNAP_HZ: 20,                 // snapshot broadcast rate
+  SNAP_HZ: 30,                 // snapshot broadcast rate (matches tick — enemy state arrives every 33ms instead of 50ms)
   MAX_PLAYERS: 4,
   ARENA: { size: 30, wallH: 4 },
   PLAYER: {

@@ -2,7 +2,7 @@
 export const CLIENT = {
   INPUT_HZ: 60,
   PING_HZ: 1,
-  INTERP_DELAY_MS: 100,        // render slightly behind server for smooth interp
+  INTERP_DELAY_MS: 60,         // render slightly behind server for smooth interp (was 100)
   MOUSE_SENS: 0.0022,
   WEAPON_MOUSE_SENS: 0.004,
   WEAPON_OFFSET_CLAMP: 1.6,    // max angular reach of weapon control (rad-ish)
