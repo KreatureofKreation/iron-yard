@@ -65,6 +65,8 @@ export function resolveHits(players, nowMs, physics) {
     const massFactor = 0.6 + w.mass * 0.4;
     let dmg = (tipSpeed - w.minSpeed) * w.speedScale * massFactor;
     if (a.stamina <= 5) dmg *= CONFIG.PLAYER.exhaustedDamageMul;
+    // Commit-strike bonus: aim reversed at speed within last 250ms (real wind-up).
+    if ((a.commitStrikeUntilMs || 0) > nowMs) dmg *= 1.30;
     if (w.thrustBonus) {
       // Thrust = tip motion aligned with sword's pointing direction (grip→tip).
       const grip = { x: a.pos.x, y: a.pos.y + 1.4, z: a.pos.z };

@@ -45,6 +45,8 @@ export function makePlayer(name, spawn, weaponKey) {
     stunUntilMs: 0,
     disarmedUntilMs: 0,
     knockedDownUntilMs: 0,
+    commitStrikeUntilMs: 0,
+    _lastTipVel: { x: 0, y: 0, z: 0 },
     bleedUntilMs: 0,
     bleedDmgPerSec: 0,
     bleedAccum: 0,

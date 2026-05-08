@@ -234,15 +234,25 @@ export class Room {
     this.physics.step();
 
     // 3) Read back actual sword pos+velocity. Subtract player vel to isolate swing motion.
+    //    Detect wind-up→strike commitment via direction reversal at speed.
     for (const p of this.players.values()) {
       const s = this.physics.swordState(p.id);
       if (!s) continue;
       p.weaponTip = s.pos;
-      p.weaponTipVel = {
+      const v = {
         x: s.vel.x - (p.vel.x || 0),
         y: s.vel.y - (p.vel.y || 0),
         z: s.vel.z - (p.vel.z || 0),
       };
+      const mag = Math.hypot(v.x, v.y, v.z);
+      const lv = p._lastTipVel;
+      const lmag = lv ? Math.hypot(lv.x, lv.y, lv.z) : 0;
+      if (mag > 6 && lmag > 3) {
+        const cosA = (v.x*lv.x + v.y*lv.y + v.z*lv.z) / (mag * lmag);
+        if (cosA < -0.5) p.commitStrikeUntilMs = now + 250;
+      }
+      p._lastTipVel = v;
+      p.weaponTipVel = v;
     }
 
     // Bleed ticks (DOT). Accumulator handles fractional dmg.
