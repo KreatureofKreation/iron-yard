@@ -67,8 +67,20 @@ function detectStuck(bot, nowMs) {
   return m.stuck;
 }
 
+// Find nearest weapon rack (passed in from room). Returns { x, z, dist } or null.
+function findNearestRack(bot, racks) {
+  if (!racks || !racks.length) return null;
+  let best = null, bestD = Infinity;
+  for (const r of racks) {
+    const dx = r.x - bot.pos.x, dz = r.z - bot.pos.z;
+    const d2 = dx * dx + dz * dz;
+    if (d2 < bestD) { bestD = d2; best = r; }
+  }
+  return best ? { x: best.x, z: best.z, dist: Math.sqrt(bestD) } : null;
+}
+
 // Generate one tick's input for the bot.
-export function botInput(bot, players, nowMs) {
+export function botInput(bot, players, nowMs, racks = null) {
   const t = findTarget(bot, players);
   if (!t) {
     return { seq: 0, mv: { x: 0, y: 0 }, yaw: bot.yaw, sprint: false, jump: false,
@@ -111,9 +123,18 @@ export function botInput(bot, players, nowMs) {
   // Movement decision.
   let mv = { x: 0, y: 0 };
   if (botHelpless) {
-    // Disarmed or stunned — full retreat (sprint away).
-    mv.y = -1;
-    mv.x = Math.sin(now / 250 + bot.id) * 0.4;
+    // Disarmed/stunned: head for nearest weapon rack to rearm if able to move.
+    const rack = findNearestRack(bot, racks);
+    const stunned = (bot.stunUntilMs || 0) > now;
+    if (rack && !stunned) {
+      const rdx = rack.x - bot.pos.x, rdz = rack.z - bot.pos.z;
+      bot._rackYaw = Math.atan2(-rdx, -rdz);
+      mv.y = 1;
+      mv.x = 0;
+    } else {
+      mv.y = -1;
+      mv.x = Math.sin(now / 250 + bot.id) * 0.4;
+    }
   } else if (botBleedingBad) {
     // Retreat — try to stay out of reach to let bleed expire.
     mv.y = -1;
@@ -190,7 +211,7 @@ export function botInput(bot, players, nowMs) {
   return {
     seq: (bot.lastInputSeq || 0) + 1,
     mv,
-    yaw,
+    yaw: (botHelpless && bot._rackYaw != null) ? bot._rackYaw : yaw,
     pitch: 0,
     sprint: botHelpless || (dist > engage * 1.8 && bot.hp > 50),
     jump,

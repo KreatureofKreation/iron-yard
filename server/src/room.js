@@ -179,7 +179,7 @@ export class Room {
     for (const p of this.players.values()) {
       let input;
       if (p.bot && p.alive && !frozen) {
-        input = botInput(p, this.players, now);
+        input = botInput(p, this.players, now, weaponRacks());
       } else if (p.pendingInput && !frozen) {
         input = p.pendingInput;
         p.pendingInput = null;
