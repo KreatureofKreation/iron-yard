@@ -269,12 +269,13 @@ export function buildCharacter({ color = 0x9aa0a8, accent = 0xc8a97e, isLocal = 
   // Static elbow bend so the arm doesn't render as a perfectly straight pole.
   elbowR.rotation.x = 0.35;
 
-  // Weapon — visual scaled to match weaponKey length and shape. Parented to weaponRig
-  // so the existing poseRig orientation still works. Sword tip is along weaponRig's
-  // local -Y. Spawn the sword group hanging below the right hand.
+  // Weapon — extended INLINE with the arm. Sword grip starts at the right hand and
+  // tip extends further along weaponRig's local -Y. With this orientation, when
+  // poseRig() aims weaponRig's -Y at the scripted target direction, the sword tip
+  // lands on the target line (rather than sticking out perpendicular as before).
   const sword = buildWeaponMesh(weaponKey);
   sword.position.set(0, -(UPPER_ARM_LEN + FOREARM_LEN), 0);
-  sword.rotation.x = -Math.PI / 2;
+  sword.rotation.x = Math.PI;            // flip so sword extends along -Y in weaponRig local
   weaponRig.add(sword);
 
   // Tip helper.
@@ -282,6 +283,7 @@ export function buildCharacter({ color = 0x9aa0a8, accent = 0xc8a97e, isLocal = 
   const w = WEAPON_VISUAL[weaponKey] ?? WEAPON_VISUAL.arming;
   tipNode.position.y = w.gripLen + w.bladeLen;
   sword.add(tipNode);
+  const SWORD_LEN = w.gripLen + w.bladeLen;
 
   // ---------- Trail ----------
   const TRAIL_COLOR = {
@@ -333,12 +335,18 @@ export function buildCharacter({ color = 0x9aa0a8, accent = 0xc8a97e, isLocal = 
       weaponRig.position.y = Y_SHOULDER + lift;
       pauldronR.position.y = Y_SHOULDER + radius * 0.05 + lift;
 
-      // Right elbow IK from tip distance (closer = more fold).
-      const totalReach = UPPER_ARM_LEN + FOREARM_LEN;
-      const chord = Math.min(Math.max(tipDist || 0, 0.02), totalReach);
-      const ratio = chord / totalReach;
-      const bend = Math.acos(Math.max(-1, Math.min(1, ratio)));
-      elbowR.rotation.x = 0.20 + bend * 0.55;
+      // Right elbow IK — proper 2-segment chain (upper arm + (forearm + sword)).
+      // Law of cosines: cos(angle_at_elbow) = (a² + b² - r²) / (2 a b).
+      // Then elbowR.rotation.x = π - angle (0 = straight arm, π = fully folded).
+      const A_ARM = UPPER_ARM_LEN;
+      const B_ARM = FOREARM_LEN + SWORD_LEN;
+      const minR = Math.abs(B_ARM - A_ARM) + 0.05;        // can't fold tighter than this
+      const maxR = A_ARM + B_ARM;                          // can't extend further than this
+      const chord = Math.max(minR, Math.min(maxR, tipDist || maxR * 0.7));
+      let cosAngle = (A_ARM * A_ARM + B_ARM * B_ARM - chord * chord) / (2 * A_ARM * B_ARM);
+      cosAngle = Math.max(-1, Math.min(1, cosAngle));
+      const elbowAngle = Math.acos(cosAngle);              // 0 = folded, π = straight
+      elbowR.rotation.x = Math.PI - elbowAngle;            // 0 = straight, π = folded
 
       anim.swayPhase += dt;
 

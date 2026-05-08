@@ -135,12 +135,16 @@ function shoulderWorld(pos, yaw, out = new THREE.Vector3()) {
 //   sword (one/two-hand): tip down-forward at right side (Coda Lunga / relaxed carry)
 //   sword+shield:         tip down-forward, slightly tighter to body
 //   spear:                Mittel/Vor — tip forward at chest level (spear's natural ready)
+// Tips MUST sit within each weapon's chain reach (UPPER_ARM + FOREARM + SWORD_LEN
+// max, |b - a| min from the law-of-cosines elbow IK). Picking values just above
+// the minimum reach so the rest pose is a credible "ready" stance with the tip
+// out and forward — not glued at hip, not overshooting.
 const REST_BY_KEY = {
-  "two-hand":  { x: 0.45, y: 1.00, z:  0.55 },
-  "one-hand":  { x: 0.45, y: 1.00, z:  0.55 },
-  "shield":    { x: 0.45, y: 1.10, z:  0.40 },
-  "spear":     { x: 0.20, y: 1.55, z:  1.40 },
-  "mace":      { x: 0.45, y: 1.05, z:  0.40 },
+  "two-hand":  { x: 0.30, y: 1.20, z:  1.20 },
+  "one-hand":  { x: 0.30, y: 1.20, z:  1.20 },
+  "shield":    { x: 0.40, y: 1.20, z:  1.05 },
+  "spear":     { x: 0.20, y: 1.30, z:  2.00 },        // tip forward at chest, pointing at enemy
+  "mace":      { x: 0.40, y: 1.10, z:  1.00 },
 };
 const REST_LOCAL_BASE = REST_BY_KEY["one-hand"];
 
