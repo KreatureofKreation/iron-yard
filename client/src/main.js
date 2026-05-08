@@ -128,24 +128,27 @@ function shoulderWorld(pos, yaw, out = new THREE.Vector3()) {
 // Player-local coords: x=right, y=up, z=forward. The actual sword body is driven by
 // the server's spring toward these targets, so heavier weapons still feel heavy.
 //
-// Rest pose varies by grip:
-//   two-hand / one-hand: Vom Tag — tip up + slightly back over right shoulder
-//   sword+shield:        Iron-Thorn High Guard — tip behind right shoulder, more compact
-const REST_BY_GRIP = {
+// Rest pose varies by weapon style. Each entry is the player-local tip position.
+//   sword (one/two-hand): Vom Tag      — tip up + back over right shoulder
+//   sword+shield:         High Guard   — tighter, tip behind right shoulder
+//   spear:                Mittel/Vor   — middle guard, tip forward at chest level
+const REST_BY_KEY = {
   "two-hand":  { x: 0.30, y: 2.00, z: -0.10 },
   "one-hand":  { x: 0.30, y: 2.00, z: -0.10 },
   "shield":    { x: 0.40, y: 1.95, z: -0.15 },
+  "spear":     { x: 0.20, y: 1.55, z:  1.40 },
 };
-const REST_LOCAL_BASE = REST_BY_GRIP["one-hand"];
+const REST_LOCAL_BASE = REST_BY_KEY["one-hand"];
 
-function restBaseForGrip(grip) {
-  return REST_BY_GRIP[grip] || REST_BY_GRIP["one-hand"];
+function restBaseFor(weaponKey, grip) {
+  if (weaponKey === "spear") return REST_BY_KEY.spear;
+  return REST_BY_KEY[grip] || REST_BY_KEY["one-hand"];
 }
 
 // Idle / breathing sway for the rest pose so the sword never feels glued in place.
 // mvSpeed bumps stride amplitude.
-function restLocal(now, mvSpeed = 0, grip = "one-hand") {
-  const base = restBaseForGrip(grip);
+function restLocal(now, mvSpeed = 0, weaponKey = "arming", grip = "one-hand") {
+  const base = restBaseFor(weaponKey, grip);
   const t = now / 1000;
   const breath = Math.sin(t * 1.3) * 0.04;
   const sway   = Math.sin(t * 0.85 + 0.7) * 0.05;
@@ -160,6 +163,59 @@ function restLocal(now, mvSpeed = 0, grip = "one-hand") {
 }
 
 const REST = REST_LOCAL_BASE;
+// Spear paths — HEMA polearm style. Tip default forward (Mittel/Vor). Stab is primary;
+// swings are wide shaft sweeps; overhead is a high-Ober chop. Reach extends to spear length.
+const SPEAR_REST = REST_BY_KEY.spear;
+const SPEAR_PATHS = {
+  // Vor → wind back to high Mittel → thrust to Langort (extended). Spear's bread + butter.
+  stab: {
+    duration: 320,
+    wpts: [
+      { t: 0.00, x: SPEAR_REST.x, y: SPEAR_REST.y, z: SPEAR_REST.z },         // Mittel/Vor
+      { t: 0.18, x: 0.20,         y: 1.50,         z: 0.40 },                  // wind back
+      { t: 0.50, x: 0.20,         y: 1.55,         z: 2.40 },                  // Langort thrust (full reach)
+      { t: 0.80, x: 0.20,         y: 1.50,         z: 0.60 },                  // pull back to Mittel
+      { t: 1.00, x: SPEAR_REST.x, y: SPEAR_REST.y, z: SPEAR_REST.z },
+    ],
+  },
+  // Ober — high guard chop downward (less common for spear, but pole-axe style).
+  overhead: {
+    duration: 540,
+    wpts: [
+      { t: 0.00, x: SPEAR_REST.x, y: SPEAR_REST.y, z: SPEAR_REST.z },
+      { t: 0.22, x: 0.30,         y: 2.30,         z: -0.20 },                  // raise to Ober
+      { t: 0.55, x: 0.20,         y: 1.40,         z: 1.40 },                   // chop forward + down
+      { t: 0.85, x: 0.20,         y: 1.30,         z: 0.80 },
+      { t: 1.00, x: SPEAR_REST.x, y: SPEAR_REST.y, z: SPEAR_REST.z },
+    ],
+  },
+  // Wide shaft sweep R — tip arcs across to right side at chest height.
+  swingR: {
+    duration: 460,
+    wpts: [
+      { t: 0.00, x: SPEAR_REST.x, y: SPEAR_REST.y, z: SPEAR_REST.z },
+      { t: 0.22, x: -0.80,        y: 1.45,         z:  0.80 },                  // wind across to left
+      { t: 0.55, x:  0.10,        y: 1.50,         z:  1.80 },                  // sweep through center, extended
+      { t: 0.80, x:  1.00,        y: 1.30,         z:  0.80 },                  // follow-through right
+      { t: 1.00, x: SPEAR_REST.x, y: SPEAR_REST.y, z: SPEAR_REST.z },
+    ],
+  },
+  swingL: {
+    duration: 460,
+    wpts: [
+      { t: 0.00, x: SPEAR_REST.x, y: SPEAR_REST.y, z: SPEAR_REST.z },
+      { t: 0.22, x:  0.80,        y: 1.45,         z:  0.80 },
+      { t: 0.55, x: -0.10,        y: 1.50,         z:  1.80 },
+      { t: 0.80, x: -1.00,        y: 1.30,         z:  0.80 },
+      { t: 1.00, x: SPEAR_REST.x, y: SPEAR_REST.y, z: SPEAR_REST.z },
+    ],
+  },
+};
+
+function pathsFor(weaponKey) {
+  if (weaponKey === "spear") return SPEAR_PATHS;
+  return ATTACK_PATHS;
+}
 const ATTACK_PATHS = {
   // Mittelhau from left to right — wind to Wechsel/left-Tail, slash through Langort
   // (extended forward chest height), end on right hip.
@@ -208,9 +264,10 @@ const ATTACK_PATHS = {
   },
 };
 
-function attackPathLocal(type, t) {
-  const path = ATTACK_PATHS[type];
-  if (!path) return REST_LOCAL;
+function attackPathLocal(type, t, weaponKey = "arming") {
+  const paths = pathsFor(weaponKey);
+  const path = paths[type] ?? ATTACK_PATHS[type];
+  if (!path) return REST_LOCAL_BASE;
   const w = path.wpts;
   for (let i = 0; i < w.length - 1; i++) {
     if (t <= w[i + 1].t) {
@@ -239,16 +296,16 @@ function localToWorld(pos, yaw, local, out = new THREE.Vector3()) {
 }
 
 // Resolve the current weapon-tip target this frame from attack state (or breathing rest).
-function computeAttackTipTarget(state, pos, yaw, mvSpeed, grip, out) {
+function computeAttackTipTarget(state, pos, yaw, mvSpeed, weaponKey, grip, out) {
   const now = performance.now();
-  let local = restLocal(now, mvSpeed, grip);
+  let local = restLocal(now, mvSpeed, weaponKey, grip);
   if (state.attack && state.attack.type) {
     const elapsed = now - state.attack.start;
     const t = elapsed / state.attack.duration;
     if (t >= 1) {
       state.attack = null;
     } else {
-      local = attackPathLocal(state.attack.type, t);
+      local = attackPathLocal(state.attack.type, t, weaponKey);
     }
   }
   return localToWorld(pos, yaw, local, out);
@@ -747,7 +804,8 @@ function frame(t) {
     // Attack state — start a new attack on edge trigger if no active attack (or the
     // active one is past its 60% mark, so successive clicks chain).
     if (inp.attackTrigger && (!state.attack || (performance.now() - state.attack.start) > state.attack.duration * 0.60)) {
-      const dur = ATTACK_PATHS[inp.attackTrigger]?.duration ?? 380;
+      const paths = pathsFor(state.weaponKey);
+      const dur = (paths[inp.attackTrigger] ?? ATTACK_PATHS[inp.attackTrigger])?.duration ?? 380;
       // Heavier weapons take longer to arc. Mass scales duration up to ~1.5x.
       const wMassDur = (RUNTIME.weapon.mass || 1.0);
       const scaledDur = Math.round(dur * (0.85 + 0.18 * Math.min(2.0, wMassDur)));
@@ -759,7 +817,7 @@ function frame(t) {
     state.weaponTipPrev.copy(state.weaponTipWorld);
     const mvSpeed = Math.hypot(mvWX, mvWZ) * speed;
     const myGrip = RUNTIME.weapons[state.weaponKey]?.grip || "one-hand";
-    computeAttackTipTarget(state, state.local.pos, state.local.yaw, mvSpeed, myGrip, state.weaponTipTarget);
+    computeAttackTipTarget(state, state.local.pos, state.local.yaw, mvSpeed, state.weaponKey, myGrip, state.weaponTipTarget);
     const wMass = RUNTIME.weapon.mass || 1.0;
     const k = Math.min(1, dt * (12 / wMass));
     state.weaponTipWorld.lerp(state.weaponTipTarget, k);
