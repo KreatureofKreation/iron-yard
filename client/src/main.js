@@ -315,6 +315,35 @@ const ATTACK_PATHS = {
   },
 };
 
+// Per-segment easing — smoother arcs than straight linear interp. Each segment of
+// an attack gets its own curve so the wind-up coils slowly, the apex rips fast,
+// and the recovery settles gently (animation principles: anticipation, snap, follow-through).
+//   "easeInOut" — symmetric S-curve, default for a balanced segment
+//   "easeOutFast" — ramps in fast, decelerates (for strike apex → follow-through)
+//   "easeInSlow"  — slow buildup (for wind-up coil)
+//   "linear"      — no easing (recovery / rest)
+function easeFn(name) {
+  switch (name) {
+    case "easeOutFast":
+      return (u) => 1 - Math.pow(1 - u, 2);
+    case "easeInSlow":
+      return (u) => u * u;
+    case "linear":
+      return (u) => u;
+    case "easeInOut":
+    default:
+      return (u) => (u < 0.5 ? 4 * u * u * u : 1 - Math.pow(-2 * u + 2, 3) / 2);
+  }
+}
+function segEase(i) {
+  // Stage 0 = wind-up (slow build), 1 = strike apex (fast rip), 2 = follow-through
+  // (decelerating), 3 = recovery to rest (gentle). Maps any path with <=4 segs.
+  if (i === 0) return easeFn("easeInSlow");
+  if (i === 1) return easeFn("easeOutFast");
+  if (i === 2) return easeFn("easeInOut");
+  return easeFn("easeInOut");
+}
+
 function attackPathLocal(type, t, weaponKey = "arming") {
   const paths = pathsFor(weaponKey);
   const path = paths[type] ?? ATTACK_PATHS[type];
@@ -324,10 +353,11 @@ function attackPathLocal(type, t, weaponKey = "arming") {
     if (t <= w[i + 1].t) {
       const a = w[i], b = w[i + 1];
       const u = (t - a.t) / Math.max(1e-6, b.t - a.t);
+      const ue = segEase(i)(Math.max(0, Math.min(1, u)));
       return {
-        x: a.x + (b.x - a.x) * u,
-        y: a.y + (b.y - a.y) * u,
-        z: a.z + (b.z - a.z) * u,
+        x: a.x + (b.x - a.x) * ue,
+        y: a.y + (b.y - a.y) * ue,
+        z: a.z + (b.z - a.z) * ue,
       };
     }
   }
@@ -902,6 +932,8 @@ function frame(t) {
       torsoRot: state.local.torsoRot,
       headRot:  state.local.headRot,
       playerYaw: state.local.yaw,
+      attackT:  state.attack ? Math.min(1, (performance.now() - state.attack.start) / state.attack.duration) : -1,
+      attackType: state.attack ? state.attack.type : null,
     });
     state.rig.setInvuln((state.local.invulnMs || 0) > 0, performance.now() / 1000);
     state.rig.pushTrail(state.weaponTipWorld, state.weaponTipVel.length());

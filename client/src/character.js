@@ -307,7 +307,7 @@ export function buildCharacter({ color = 0x9aa0a8, accent = 0xc8a97e, isLocal = 
     root, weaponRig, sword, tipNode, trail, trailGeo, trailMat, trailPts, trailState,
     parts: { torso, head, helm, legL: legLGroup, legR: legRGroup, armL: armLGroup, weaponRig, hips: pelvis },
 
-    animate(dt, { mvSpeed = 0, swinging = false, blocking = false, alive = true, swingLat = 0, swingFwd = 0, crippled = false, stunned = false, verAim = 0, tipDist = 0, torsoRot = null, headRot = null, playerYaw = 0 } = {}) {
+    animate(dt, { mvSpeed = 0, swinging = false, blocking = false, alive = true, swingLat = 0, swingFwd = 0, crippled = false, stunned = false, verAim = 0, tipDist = 0, torsoRot = null, headRot = null, playerYaw = 0, attackT = -1, attackType = null } = {}) {
       // Shoulder lift on high stance — raises the right shoulder when aim is up.
       const lift = Math.max(-0.05, Math.min(0.20, verAim * 0.18));
       weaponRig.position.y = Y_SHOULDER + lift;
@@ -348,6 +348,51 @@ export function buildCharacter({ color = 0x9aa0a8, accent = 0xc8a97e, isLocal = 
         // Whole-body vertical bob (subtle — happens twice per stride). Added on top of
         // whatever poseRig() already set (player's world Y / jump altitude).
         root.position.y += (Math.abs(Math.sin(phase)) - 0.5) * 0.04 * stride;
+
+        // Attack anticipation + impact — animation principle of squash/stretch.
+        // Wind-up dips and twists away; strike apex pops upward; recovery settles.
+        if (attackT >= 0 && attackT <= 1) {
+          // Pose-based body offsets, smooth across phases.
+          let crouch = 0;     // negative Y (dip) during wind-up
+          let surge  = 0;     // positive forward lean spike during strike apex
+          let recoil = 0;     // negative forward lean during follow-through (heavy hit)
+          if (attackT < 0.22) {
+            // Wind-up coil — body squats and shoulders rotate away.
+            const w = attackT / 0.22;        // 0..1 across wind-up
+            crouch = -0.08 * Math.sin(w * Math.PI * 0.5);
+          } else if (attackT < 0.55) {
+            // Strike apex — explode upward + forward.
+            const w = (attackT - 0.22) / 0.33;
+            const arc = Math.sin(w * Math.PI);
+            crouch = 0.04 * arc;             // small rise (visible commit)
+            surge  = 0.10 * arc;             // forward dip into the swing
+          } else if (attackT < 0.85) {
+            // Follow-through — continue forward, slight downward
+            const w = (attackT - 0.55) / 0.30;
+            recoil = 0.05 * (1 - w);
+          }
+          root.position.y += crouch;
+          torso.rotation.x += surge - recoil;
+
+          // Chest twist — chambers away during wind-up, snaps toward strike at apex.
+          // Applied to torso rotation.y (chest mesh only) so it reads as a visible
+          // shoulder turn without breaking the weaponRig's IK aiming.
+          if (attackType === "swingR" || attackType === "swingL" || attackType === "overhead") {
+            const dir = attackType === "swingL" ? -1 : 1;
+            const twist = attackT < 0.22
+              ? -dir * 0.30 * (attackT / 0.22)
+              : attackT < 0.55
+                ? dir * 0.40 * Math.sin(((attackT - 0.22) / 0.33) * Math.PI)
+                : 0;
+            torso.rotation.y = twist;
+          } else if (attackType === "stab") {
+            // Thrust — head leads, body lunges forward at apex.
+            head.rotation.x += attackT < 0.22 ? -0.12 * (attackT / 0.22)
+                              : attackT < 0.55 ? 0.12 * (1 - (attackT - 0.22) / 0.33) : 0;
+          }
+        } else {
+          torso.rotation.y = 0;
+        }
 
         // Left arm posing.
         if (grip === "two-hand") {
