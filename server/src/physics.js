@@ -233,11 +233,12 @@ export class PhysicsWorld {
     const wMass = sw.weaponMass;
     const bodyMass = sw.body.mass() || wMass;        // Rapier-computed mass
     // k = stiffness, d = damping. Inverse-mass on stiffness so heavier feels heavier.
-    // Damping low enough that the tip overshoots toward fast target motion (swing feel).
-    // Lower stiffness + higher damping → heavy, deliberate swings (not twiggy).
-    // Tuned for world.timestep = 1/30 (full server-tick rate).
-    const k = 260 / wMass;
-    const d = 16;
+    // Higher stiffness → sword body tracks the scripted target tightly so the visible
+    // sword and the damage-applying physics body don't diverge during a swing. Mass
+    // scaling still gives heavier weapons a heavier feel because their bodies are
+    // physically heavier and respond slower to the same impulse.
+    const k = 900 / wMass;
+    const d = 22;
     const ax = (target.x - t.x) * k - v.x * d;
     const ay = (target.y - t.y) * k - v.y * d;
     const az = (target.z - t.z) * k - v.z * d;

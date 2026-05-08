@@ -465,6 +465,12 @@ net.on("snap", (m) => {
       state.local.severedArm = !!p.severedArm;
       if (state.rig?.setSeveredLeg) state.rig.setSeveredLeg(state.local.severedLeg);
       if (state.rig?.setSeveredArm) state.rig.setSeveredArm(state.local.severedArm);
+      // Server's authoritative sword tip (physics body position). Render local visual
+      // toward this so the visible sword matches where damage is actually applied.
+      if (p.weaponTip) {
+        if (!state._serverTip) state._serverTip = new THREE.Vector3();
+        state._serverTip.set(p.weaponTip.x, p.weaponTip.y, p.weaponTip.z);
+      }
       state.local.stunMsLeft = p.stunMsLeft || 0;
       state.local.bleedMsLeft = p.bleedMsLeft || 0;
       state.local.torsoRot = p.torsoRot || null;
@@ -868,15 +874,19 @@ function frame(t) {
       state.attack = { type: inp.attackTrigger, start: performance.now(), duration: scaledDur };
     }
 
-    // Compute target weapon tip from attack state (or rest), then lerp the actual tip
-    // toward it with mass-dependent rate (heavier = more lag = more weight).
+    // Compute target weapon tip from attack state (or rest). Send target to server.
+    // Visible local sword is rendered from the SERVER's broadcast tip (physics body
+    // position) so the visible sword and the damage-applying body never diverge.
     state.weaponTipPrev.copy(state.weaponTipWorld);
     const mvSpeed = Math.hypot(mvWX, mvWZ) * speed;
     const myGrip = RUNTIME.weapons[state.weaponKey]?.grip || "one-hand";
     computeAttackTipTarget(state, state.local.pos, state.local.yaw, mvSpeed, state.weaponKey, myGrip, state.weaponTipTarget);
+    // Render-side: lerp toward server-authoritative tip (falling back to scripted target
+    // before the first snapshot arrives). Heavier weapons converge slower for weight feel.
     const wMass = RUNTIME.weapon.mass || 1.0;
-    const k = Math.min(1, dt * (12 / wMass));
-    state.weaponTipWorld.lerp(state.weaponTipTarget, k);
+    const k = Math.min(1, dt * (22 / wMass));
+    const renderSrc = state._serverTip || state.weaponTipTarget;
+    state.weaponTipWorld.lerp(renderSrc, k);
     state.weaponTipVel.subVectors(state.weaponTipWorld, state.weaponTipPrev).divideScalar(Math.max(dt, 1 / 240));
 
     // Pose rig.

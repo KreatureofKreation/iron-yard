@@ -86,7 +86,7 @@ export const CONFIG = {
     blockReductionFront: 0.85, // facing attacker
     blockReductionSide:  0.40,
     bluntBlockPenalty:   0.30, // mace ignores 30% of block reduction
-    parrySpeedMin:       6.0,  // both swords moving fast → clash, no damage
+    parrySpeedMin:       9.0,  // both swords moving fast → clash, no damage
     parryRadius:         0.30, // segments closer than this with both swinging fast
     // Body-part hit-zone multipliers (server-derived from hit Y on the capsule).
     zone: {

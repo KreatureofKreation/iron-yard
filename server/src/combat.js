@@ -110,10 +110,9 @@ export function resolveHits(players, nowMs, physics) {
     a.stamina = Math.max(0, a.stamina - CONFIG.PLAYER.staminaSwingCost);
     a.roundDamage = (a.roundDamage || 0) + dmg;
 
-    // Knockdown: hits > 60 dmg topple victim for 1.5s (input locked, sword dropped,
-    // torso joint loosens so they physically slump). Also push torso in attacker's
-    // direction so the flop reads visually.
-    if (dmg > 60 && t.hp > 0) {
+    // Knockdown: only the heaviest hits topple. Threshold raised so most clean hits
+    // just deal damage without locking the victim out of input.
+    if (dmg > 80 && t.hp > 0) {
       t.knockedDownUntilMs = Math.max(t.knockedDownUntilMs, nowMs + 1500);
       if (physics) {
         const dir = norm(sub(t.pos, a.pos));
@@ -122,20 +121,21 @@ export function resolveHits(players, nowMs, physics) {
       events.push({ kind: "knockdown", id: t.id, at: { x: t.pos.x, y: t.pos.y, z: t.pos.z } });
     }
 
-    // Knockback impulse on victim — bigger so heavy weapons feel impactful.
+    // Knockback impulse on victim.
     const kb = norm(sub(t.pos, a.pos));
-    const kbMag = 5.0 + (zone === "head" ? 3.0 : 1.0) + tipSpeed * 0.18;
+    const kbMag = 4.0 + (zone === "head" ? 2.0 : 0.5) + tipSpeed * 0.14;
     t.impulse.x += kb.x * kbMag;
     t.impulse.z += kb.z * kbMag;
-    // Recoil on attacker — torso jerks back from the impact (Newton's third + drama).
+    // Recoil on attacker — visible jerk back, but reduced so the attacker isn't
+    // staggered out of their own combo.
     if (physics) {
-      const recoilMag = (3.0 + tipSpeed * 0.15) * (w.mass / 2.0);
-      physics.pushTorso(a.id, { x: -kb.x * recoilMag, y: 0.5, z: -kb.z * recoilMag });
-      // Brief sword body slowdown so it doesn't pass clean through the victim.
+      const recoilMag = (1.2 + tipSpeed * 0.06) * (w.mass / 3.0);
+      physics.pushTorso(a.id, { x: -kb.x * recoilMag, y: 0.3, z: -kb.z * recoilMag });
+      // Slow the sword body so it doesn't pass clean through and chain hits.
       const sw = physics.swords?.get(a.id);
       if (sw) {
         const v = sw.body.linvel();
-        sw.body.setLinvel({ x: v.x * 0.25, y: v.y * 0.25, z: v.z * 0.25 }, true);
+        sw.body.setLinvel({ x: v.x * 0.30, y: v.y * 0.30, z: v.z * 0.30 }, true);
       }
     }
     if (zone === "legs") {
