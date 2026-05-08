@@ -259,6 +259,7 @@ net.on("snap", (m) => {
       state.local.crippleMsLeft = p.crippleMsLeft || 0;
       state.local.stunMsLeft = p.stunMsLeft || 0;
       state.local.bleedMsLeft = p.bleedMsLeft || 0;
+      state.local.torsoRot = p.torsoRot || null;
       state._myScore = p.score || 0;
       state._myDeaths = p.deaths || 0;
       HUD.setHp(p.hp, RUNTIME.player.hp);
@@ -298,6 +299,7 @@ net.on("snap", (m) => {
     r.stunMsLeft = p.stunMsLeft || 0;
     r.bleedMsLeft = p.bleedMsLeft || 0;
     r.stamina = p.stamina ?? 100;
+    r.torsoRot = p.torsoRot || null;
     // Restore detached helm + rig visibility on remote respawn.
     if (!wasAliveR && p.alive) {
       if (r.rig?.parts?.helm) r.rig.parts.helm.visible = true;
@@ -624,6 +626,8 @@ function frame(t) {
       stunned:  (state.local.stunMsLeft    || 0) > 0,
       verAim:   inp.aim.y,
       tipDist:  tipDistLocal,
+      torsoRot: state.local.torsoRot,
+      playerYaw: state.local.yaw,
     });
     state.rig.setInvuln((state.local.invulnMs || 0) > 0, performance.now() / 1000);
     state.rig.pushTrail(state.weaponTipWorld, state.weaponTipVel.length());
@@ -829,6 +833,8 @@ function interpolateRemote(r, renderTime) {
     stunned:  (r.stunMsLeft    || 0) > 0,
     verAim: remoteVerAim,
     tipDist: remoteTipDist,
+    torsoRot: r.torsoRot,
+    playerYaw: yaw,
   });
   r.rig.setInvuln((r.invulnMs || 0) > 0, performance.now() / 1000);
   // Estimate tip speed from snap delta to drive trail.

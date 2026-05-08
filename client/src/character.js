@@ -143,7 +143,7 @@ export function buildCharacter({ color = 0x9aa0a8, accent = 0xc8a97e, isLocal = 
      * Per-frame animation update.
      * mvSpeed: 0..~7 (m/s). swinging boolean. dt seconds. blocking boolean.
      */
-    animate(dt, { mvSpeed = 0, swinging = false, blocking = false, alive = true, swingLat = 0, swingFwd = 0, crippled = false, stunned = false, verAim = 0, tipDist = 0 } = {}) {
+    animate(dt, { mvSpeed = 0, swinging = false, blocking = false, alive = true, swingLat = 0, swingFwd = 0, crippled = false, stunned = false, verAim = 0, tipDist = 0, torsoRot = null, playerYaw = 0 } = {}) {
       // Shoulder lift on high stance — raises the arm's anchor when aim points up.
       const lift = Math.max(-0.05, Math.min(0.20, verAim * 0.18));
       weaponRig.position.y = armPivotY + lift;
@@ -193,6 +193,18 @@ export function buildCharacter({ color = 0x9aa0a8, accent = 0xc8a97e, isLocal = 
         anim.leanX = (anim.leanX || 0) + (THREE.MathUtils.clamp(swingFwd * 0.04, -0.25, 0.25) - (anim.leanX || 0)) * Math.min(1, dt * 12);
         torso.rotation.z = idleSway + anim.leanZ;
         torso.rotation.x = anim.leanX;
+        // Active-ragdoll torso wobble layered ON TOP of synthetic lean. torsoRot is in
+        // WORLD space; we convert to character-local by inverse-yaw'ing.
+        if (torsoRot) {
+          const cy = Math.cos(-playerYaw), sy = Math.sin(-playerYaw);
+          // Apply only the X/Z components of the wobble (yaw stays handled by root).
+          // For small angles the imaginary parts of the quat ≈ axis * angle/2.
+          // World x/z components → character-local via inverse-yaw rotation matrix.
+          const lx =  cy * torsoRot.x + sy * torsoRot.z;
+          const lz = -sy * torsoRot.x + cy * torsoRot.z;
+          torso.rotation.x += lx * 2.0;     // 2*sin(angle/2) ≈ angle
+          torso.rotation.z += lz * 2.0;
+        }
         torso.position.y = height * 0.55 + Math.sin(phase * 2) * 0.02 * stride;
         // Hips counter-rotate during big swings — exaggerated wind-up feel.
         hips.rotation.y = -anim.leanZ * 1.2;
