@@ -928,10 +928,12 @@ function frame(t) {
     const myGrip = RUNTIME.weapons[state.weaponKey]?.grip || "one-hand";
     computeAttackTipTarget(state, state.local.pos, state.local.yaw, mvSpeed, state.weaponKey, myGrip, state.weaponTipTarget);
     const wMass = RUNTIME.weapon.mass || 1.0;
-    // Heavier weapons lag the target more — feels weighty. Hit-stop briefly freezes
-    // the tip on a successful hit for visceral impact.
+    // Tip tracks the target tightly (high lerp rate) so the visible sword actually
+    // sweeps through the attack arc within the 400-500ms attack window. Previously
+    // k was so low the sword barely moved before the attack ended. Heavier weapons
+    // still lag a bit because of mass scaling.
     const isHitStop = performance.now() < (state._hitStopUntil || 0);
-    const k = Math.min(1, dt * (14 / wMass) * (isHitStop ? 0.05 : 1));
+    const k = Math.min(1, dt * (40 / Math.max(1, wMass * 0.6)) * (isHitStop ? 0.05 : 1));
     state.weaponTipWorld.lerp(state.weaponTipTarget, k);
     state.weaponTipVel.subVectors(state.weaponTipWorld, state.weaponTipPrev).divideScalar(Math.max(dt, 1 / 240));
 
