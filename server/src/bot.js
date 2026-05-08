@@ -10,12 +10,16 @@ const BOT_NAMES = [
 ];
 const WEAPONS = ["arming", "longsword", "mace", "spear"];
 
-// Difficulty tunings: hz scales swing rate; aimSlop adds noise to facing; dodgeFactor scales
-// the threat-detection threshold (lower = dodges more); strafeBoost when in range.
+// Difficulty tunings.
+//   aimSlop      — yaw noise; lower = better aim
+//   dodgeFactor  — sidestep threshold; higher = more reactive
+//   blockChance  — block when low HP
+//   attackGapMs  — pause between attack cycles (lower = faster attacker)
+//   commitChance — chance the bot commits to its attack rather than feinting at last moment
 const BOT_DIFFICULTY = {
-  easy:   { swingHz: 2, aimSlop: 0.55, dodgeFactor: 0.0, strafeBoost: 0.25, blockChance: 0.20, hesitationMs: 1100 },
-  medium: { swingHz: 3, aimSlop: 0.30, dodgeFactor: 0.3, strafeBoost: 0.40, blockChance: 0.45, hesitationMs: 600 },
-  hard:   { swingHz: 5, aimSlop: 0.15, dodgeFactor: 0.6, strafeBoost: 0.60, blockChance: 0.70, hesitationMs: 250 },
+  easy:   { aimSlop: 0.55, dodgeFactor: 0.0, blockChance: 0.20, attackGapMs: 1400, commitChance: 0.85 },
+  medium: { aimSlop: 0.30, dodgeFactor: 0.3, blockChance: 0.45, attackGapMs:  800, commitChance: 0.92 },
+  hard:   { aimSlop: 0.15, dodgeFactor: 0.6, blockChance: 0.70, attackGapMs:  400, commitChance: 0.97 },
 };
 export function botDifficultyTuning(level = "medium") {
   return BOT_DIFFICULTY[level] || BOT_DIFFICULTY.medium;
@@ -193,29 +197,11 @@ export function botInput(bot, players, nowMs, racks = null) {
   // Block when low HP and target is close.
   const blocking = bot.hp < 30 && dist < engage * 1.3 && Math.random() < tune.blockChance;
 
-  // Weapon tip — when in range, swing in an arc; otherwise rest forward.
+  // Phase-based attack — same windup/release/recovery model as humans, server-side.
+  // Bot state holds the current attack and start time; we generate the tip target
+  // each tick based on phase progression.
   const inRange = dist <= engage + 0.5;
-  const swingHz = tune.swingHz + (bot.id % 3);
-  const swingPhase = nowMs / 1000 * swingHz + bot.id * 0.7;
-  // Hesitation gate: bot swings hard for 400ms, then pauses for `hesitationMs` before
-  // the next attack. Easy bots are very passive; hard bots barely pause.
-  const cycleMs = (tune.hesitationMs ?? 250) + 400;
-  const cycleFrac = (nowMs % cycleMs) / cycleMs;
-  const swingActive = cycleFrac > (tune.hesitationMs ?? 250) / cycleMs;
-  // Stunned target → always swing fully (killshot).
-  const fullSwing = swingActive || targetStunned;
-  const swingAng = Math.sin(swingPhase) * (fullSwing ? 1.05 : 0.15);
-  const heightOsc = 1.5 + Math.cos(swingPhase * 0.5) * 0.25;
-  const aimYaw = inRange ? yaw + swingAng : yaw + Math.sin(nowMs / 500 + bot.id) * 0.2;
-
-  const length = w.length;
-  const fx = -Math.sin(aimYaw);
-  const fz = -Math.cos(aimYaw);
-  const tip = {
-    x: bot.pos.x + fx * length,
-    y: bot.pos.y + heightOsc,
-    z: bot.pos.z + fz * length,
-  };
+  const tip = chooseBotAttackTip(bot, target, yaw, dist, engage, w, tune, nowMs, targetStunned);
 
   // Jump rarely to dodge.
   const jump = bot.onGround && (
@@ -234,4 +220,129 @@ export function botInput(bot, players, nowMs, racks = null) {
     swinging: true,
     weaponTip: tip,
   };
+}
+
+// Phase-based bot attacks. Picks an attack type when ready, then runs through
+// windup → release → recovery, returning the appropriate weaponTip world position
+// for each tick. Forces the spring-driven sword body to actually trace the strike.
+const BOT_ATTACK_PHASES = {
+  swing:    { windup: 380, release: 240, recovery: 320 },
+  overhead: { windup: 440, release: 280, recovery: 360 },
+  stab:     { windup: 280, release: 180, recovery: 260 },
+};
+// Local poses (forward-relative; same axes as the human attack waypoints in main.js
+// but evaluated server-side from the bot's yaw and position).
+const BOT_POSES = {
+  swing: {
+    chamber: { side: -1.0, up: 0.55,  fwd: -0.30 },     // wind back over off-shoulder
+    contact: { side:  0.20, up: 0.45, fwd:  1.40 },     // strike forward
+    end:     { side:  1.10, up: -0.20, fwd:  0.30 },    // follow-through past hip
+  },
+  overhead: {
+    chamber: { side:  0.40, up: 1.40, fwd: -0.40 },
+    contact: { side:  0.10, up: 0.20, fwd:  1.30 },
+    end:     { side: -0.20, up: -0.85, fwd:  0.95 },
+  },
+  stab: {
+    chamber: { side:  0.10, up: 0.05, fwd:  0.05 },
+    contact: { side:  0.20, up: 0.20, fwd:  1.00 },
+    end:     { side:  0.30, up: 0.30, fwd:  1.90 },
+  },
+};
+
+function easeInSlow(u) { return u * u; }
+function easeOutFast(u) { return 1 - Math.pow(1 - u, 2); }
+function easeInOut(u) { return u < 0.5 ? 4*u*u*u : 1 - Math.pow(-2*u+2, 3) / 2; }
+function lerp(a, b, t) { return a + (b - a) * t; }
+
+function chooseBotAttackTip(bot, target, yaw, dist, engage, w, tune, nowMs, targetStunned) {
+  const inRange = dist <= engage + 0.4;
+
+  // State machine for bot attack cycle.
+  if (!bot._atk) bot._atk = { phase: "idle", start: 0, type: null, nextAtMs: 0 };
+  const atk = bot._atk;
+
+  // If idle and ready + in range, start a new attack.
+  if (atk.phase === "idle" && nowMs >= atk.nextAtMs) {
+    if (inRange || targetStunned) {
+      // Pick attack type weighted by weapon class.
+      const r = Math.random();
+      if (w.key === "spear") {
+        atk.type = r < 0.65 ? "stab" : r < 0.85 ? "swing" : "overhead";
+      } else if (w.key === "mace") {
+        atk.type = r < 0.45 ? "swing" : r < 0.85 ? "overhead" : "stab";
+      } else if (w.key === "longsword") {
+        atk.type = r < 0.40 ? "swing" : r < 0.75 ? "overhead" : "stab";
+      } else {
+        atk.type = r < 0.55 ? "swing" : r < 0.85 ? "overhead" : "stab";
+      }
+      // Hard bots commit; easy bots may feint (start then bail out into recovery).
+      if (Math.random() > tune.commitChance) atk.type = "feint";
+      atk.start = nowMs;
+      atk.phase = "windup";
+    }
+  }
+
+  // Compute current tip target.
+  const elapsed = nowMs - atk.start;
+  const type = atk.type === "feint" ? "swing" : atk.type;
+  const phases = type ? BOT_ATTACK_PHASES[type] : null;
+  let pose = null;     // {side, up, fwd}
+
+  if (atk.phase === "windup" && phases) {
+    const u = elapsed / phases.windup;
+    if (u >= 1) {
+      // Feint exits HERE — skip release, jump straight into recovery.
+      if (atk.type === "feint") { atk.phase = "recovery"; atk.start = nowMs; }
+      else { atk.phase = "release"; atk.start = nowMs; }
+    } else {
+      const ue = easeInSlow(u);
+      pose = poseLerp(REST_POSE, BOT_POSES[type].chamber, ue);
+    }
+  }
+  if (atk.phase === "release" && phases) {
+    const re = nowMs - atk.start;
+    if (re >= phases.release) {
+      atk.phase = "recovery";
+      atk.start = nowMs;
+    } else {
+      const u = re / phases.release;
+      const ue = easeOutFast(u);
+      // chamber → contact → end via two-segment lerp.
+      const a = BOT_POSES[type].chamber, b = BOT_POSES[type].contact, c = BOT_POSES[type].end;
+      if (ue < 0.5) pose = poseLerp(a, b, ue / 0.5);
+      else          pose = poseLerp(b, c, (ue - 0.5) / 0.5);
+    }
+  }
+  if (atk.phase === "recovery" && phases) {
+    const rc = nowMs - atk.start;
+    if (rc >= phases.recovery) {
+      atk.phase = "idle";
+      atk.type = null;
+      atk.nextAtMs = nowMs + tune.attackGapMs + ((bot.id * 73) % 200);
+    } else {
+      const u = rc / phases.recovery;
+      const ue = easeInOut(u);
+      const last = atk.type === "feint" ? BOT_POSES[type].chamber : BOT_POSES[type].end;
+      pose = poseLerp(last, REST_POSE, ue);
+    }
+  }
+
+  // No active attack → idle ready stance.
+  if (!pose) pose = REST_POSE;
+
+  // Scale by weapon length so heavier/longer weapons reach further.
+  const reach = w.length;
+  const fx = -Math.sin(yaw), fz = -Math.cos(yaw);
+  const rx =  Math.cos(yaw), rz = -Math.sin(yaw);
+  return {
+    x: bot.pos.x + rx * (pose.side * 0.6) + fx * (pose.fwd * reach),
+    y: bot.pos.y + 1.40 + pose.up * 0.6,
+    z: bot.pos.z + rz * (pose.side * 0.6) + fz * (pose.fwd * reach),
+  };
+}
+
+const REST_POSE = { side: 0.30, up: -0.10, fwd: 0.55 };
+function poseLerp(a, b, t) {
+  return { side: lerp(a.side, b.side, t), up: lerp(a.up, b.up, t), fwd: lerp(a.fwd, b.fwd, t) };
 }
