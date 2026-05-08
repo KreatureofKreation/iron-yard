@@ -649,8 +649,26 @@ net.on("hit", (m) => {
     }
   }
   if (m.from === state.myId && m.dmg > 0) {
-    // Hit-stop — brief tip-freeze on attacker for visceral impact (60ms).
-    state._hitStopUntil = performance.now() + 60;
+    // Hit-stop — tip locks AT the impact point for ~110ms. Sword visibly stops
+    // on target instead of passing through. Then resumes the attack path.
+    state._hitStopUntil = performance.now() + 110;
+    if (m.at) {
+      if (!state._hitImpactPos) state._hitImpactPos = new THREE.Vector3();
+      state._hitImpactPos.set(m.at.x, m.at.y, m.at.z);
+    }
+  }
+  // Blood splatter for slash/pierce hits (any victim, any attacker).
+  if (m.dmg > 0 && m.at && (m.damageType === "slash" || m.damageType === "pierce")) {
+    for (let i = 0; i < 8; i++) {
+      const wobble = { x: m.at.x + (Math.random() - 0.5) * 0.2, y: m.at.y + (Math.random() - 0.5) * 0.2, z: m.at.z + (Math.random() - 0.5) * 0.2 };
+      spark(scene, wobble, 0.35 + Math.random() * 0.25, 0xa01515);
+    }
+  }
+  // Heavier dust burst for blunt hits.
+  if (m.dmg > 0 && m.at && m.damageType === "blunt") {
+    for (let i = 0; i < 5; i++) {
+      spark(scene, m.at, 0.30 + Math.random() * 0.30, 0xc8a070);
+    }
   }
   if (m.kill) {
     SFX.death();
@@ -956,13 +974,16 @@ function frame(t) {
     const mvSpeed = Math.hypot(mvWX, mvWZ) * speed;
     const myGrip = RUNTIME.weapons[state.weaponKey]?.grip || "one-hand";
     computeAttackTipTarget(state, state.local.pos, state.local.yaw, mvSpeed, state.weaponKey, myGrip, state.weaponTipTarget);
-    const wMass = RUNTIME.weapon.mass || 1.0;
-    // Tip tracks the target tightly (high lerp rate) so the visible sword actually
-    // sweeps through the attack arc within the 400-500ms attack window. Previously
-    // k was so low the sword barely moved before the attack ended. Heavier weapons
-    // still lag a bit because of mass scaling.
+    // Hit-stop override — during the freeze window after a successful hit, redirect
+    // the tip target to the impact point so the visible sword visibly locks on the
+    // victim. Combined with the lower lerp rate below, the sword barely moves for
+    // ~110 ms — a clear "I hit something" cue.
     const isHitStop = performance.now() < (state._hitStopUntil || 0);
-    const k = Math.min(1, dt * (40 / Math.max(1, wMass * 0.6)) * (isHitStop ? 0.05 : 1));
+    if (isHitStop && state._hitImpactPos) {
+      state.weaponTipTarget.copy(state._hitImpactPos);
+    }
+    const wMass = RUNTIME.weapon.mass || 1.0;
+    const k = Math.min(1, dt * (40 / Math.max(1, wMass * 0.6)) * (isHitStop ? 0.10 : 1));
     state.weaponTipWorld.lerp(state.weaponTipTarget, k);
     state.weaponTipVel.subVectors(state.weaponTipWorld, state.weaponTipPrev).divideScalar(Math.max(dt, 1 / 240));
 
