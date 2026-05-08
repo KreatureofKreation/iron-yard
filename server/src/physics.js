@@ -179,7 +179,23 @@ export class PhysicsWorld {
     const az = (target.z - t.z) * k - v.z * d;
     // Convert (target accel) → impulse for THIS body's actual mass.
     const im = bodyMass * dt;
-    sw.body.applyImpulse({ x: ax * im, y: ay * im, z: az * im }, true);
+    const impX = ax * im, impY = ay * im, impZ = az * im;
+    sw.body.applyImpulse({ x: impX, y: impY, z: impZ }, true);
+    // Newton's third: equal-and-opposite reaction on the torso (active ragdoll feel).
+    // Applied at the wrist offset so it imparts torque (twist) on the torso.
+    const torso = this.torsos.get(playerId);
+    if (torso) {
+      const tt = torso.body.translation();
+      // Apply at sword grip (~halfway between sword pos and torso, slightly forward).
+      const gx = (t.x + tt.x) * 0.5;
+      const gy = (t.y + tt.y) * 0.5;
+      const gz = (t.z + tt.z) * 0.5;
+      torso.body.applyImpulseAtPoint(
+        { x: -impX * 0.45, y: -impY * 0.45, z: -impZ * 0.45 },
+        { x: gx, y: gy, z: gz },
+        true,
+      );
+    }
   }
 
   // Steps the world and drains collision-start events into a per-tick contact register.
