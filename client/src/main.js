@@ -120,45 +120,78 @@ function shoulderWorld(pos, yaw, out = new THREE.Vector3()) {
   return out.set(pos.x + sx, pos.y + 1.4, pos.z + sz);
 }
 
-// Discrete button-driven attacks. Each is a piecewise-linear path through waypoints
-// in player-local coords (x=right, y=up, z=forward). The actual sword body is driven
-// by the server's spring toward this target, so heavier weapons still feel heavy.
-const REST_LOCAL = { x: 0.45, y: 1.05, z: 0.30 };
+// Discrete button-driven attacks based on historical longsword stances:
+//   rest     = Vom Tag           (sword on right shoulder, tip up + slightly back)
+//   stab     = Pflug → Langort   (mid-low wind, thrust forward to face/chest)
+//   overhead = Oberhau           (high wind from Vom Tag, strike down through center)
+//   swingR/L = Mittelhau         (cross-body horizontal cut at chest height)
+// Player-local coords: x=right, y=up, z=forward. The actual sword body is driven by
+// the server's spring toward these targets, so heavier weapons still feel heavy.
+//
+// Vom Tag = rest. Hands at right-shoulder height, tip up and slightly behind shoulder.
+const REST_LOCAL_BASE = { x: 0.30, y: 2.00, z: -0.10 };
 
+// Idle / breathing sway for the rest pose so the sword never feels glued in place.
+// mvSpeed bumps stride amplitude.
+function restLocal(now, mvSpeed = 0) {
+  const t = now / 1000;
+  const breath = Math.sin(t * 1.3) * 0.04;
+  const sway   = Math.sin(t * 0.85 + 0.7) * 0.05;
+  const walk   = Math.min(1, mvSpeed / 4);
+  const bob    = Math.sin(t * (4 + mvSpeed * 1.2)) * 0.08 * walk;
+  const stride = Math.sin(t * (2 + mvSpeed * 0.6)) * 0.06 * walk;
+  return {
+    x: REST_LOCAL_BASE.x + sway + stride,
+    y: REST_LOCAL_BASE.y + breath + bob,
+    z: REST_LOCAL_BASE.z + Math.cos(t * 0.85 + 0.7) * 0.06 + stride * 0.4,
+  };
+}
+
+const REST = REST_LOCAL_BASE;
 const ATTACK_PATHS = {
+  // Mittelhau from left to right — wind to Wechsel/left-Tail, slash through Langort
+  // (extended forward chest height), end on right hip.
   swingR: {
-    duration: 380,
+    duration: 420,
     wpts: [
-      { t: 0.00, x: -0.40, y: 1.45, z: 0.10 },   // wind-up: sword crossed left
-      { t: 0.30, x:  0.05, y: 1.45, z: 0.95 },   // strike apex: extended forward
-      { t: 0.60, x:  0.75, y: 1.25, z: 0.55 },   // follow-through right
-      { t: 1.00, x: REST_LOCAL.x, y: REST_LOCAL.y, z: REST_LOCAL.z },
+      { t: 0.00, x: REST.x,        y: REST.y,        z: REST.z },        // start at Vom Tag
+      { t: 0.18, x: -0.55,         y: 1.30,          z: -0.10 },         // wind: left Wechsel
+      { t: 0.45, x:  0.10,         y: 1.45,          z:  1.25 },         // strike apex (Langort)
+      { t: 0.70, x:  0.80,         y: 1.05,          z:  0.50 },         // follow-through right hip
+      { t: 1.00, x: REST.x,        y: REST.y,        z: REST.z },        // recover to Vom Tag
     ],
   },
+  // Mittelhau from right to left — mirror.
   swingL: {
-    duration: 380,
+    duration: 420,
     wpts: [
-      { t: 0.00, x:  0.40, y: 1.45, z: 0.10 },
-      { t: 0.30, x: -0.05, y: 1.45, z: 0.95 },
-      { t: 0.60, x: -0.75, y: 1.25, z: 0.55 },
-      { t: 1.00, x: REST_LOCAL.x, y: REST_LOCAL.y, z: REST_LOCAL.z },
+      { t: 0.00, x: REST.x,        y: REST.y,        z: REST.z },
+      { t: 0.18, x:  0.55,         y: 1.30,          z: -0.10 },         // wind: right Wechsel
+      { t: 0.45, x: -0.10,         y: 1.45,          z:  1.25 },         // Langort
+      { t: 0.70, x: -0.80,         y: 1.05,          z:  0.50 },
+      { t: 1.00, x: REST.x,        y: REST.y,        z: REST.z },
     ],
   },
+  // Oberhau (descending strike) from Vom Tag → wind high → cut down through center.
   overhead: {
-    duration: 480,
+    duration: 520,
     wpts: [
-      { t: 0.00, x:  0.30, y: 2.10, z: -0.25 },  // raised behind head
-      { t: 0.30, x:  0.25, y: 1.80, z:  0.55 },  // arc forward
-      { t: 0.65, x:  0.10, y: 0.95, z:  1.10 },  // chop down + forward
-      { t: 1.00, x: REST_LOCAL.x, y: REST_LOCAL.y, z: REST_LOCAL.z },
+      { t: 0.00, x: REST.x,        y: REST.y,        z: REST.z },        // Vom Tag
+      { t: 0.18, x:  0.40,         y: 2.30,          z: -0.30 },         // High Vom Tag wind
+      { t: 0.45, x:  0.15,         y: 1.65,          z:  1.05 },         // strike forward at chest
+      { t: 0.75, x: -0.05,         y: 0.65,          z:  0.95 },         // Pflug-like end (low)
+      { t: 1.00, x: REST.x,        y: REST.y,        z: REST.z },
     ],
   },
+  // Stab: Pflug → Langort thrust → recover.
   stab: {
-    duration: 340,
+    duration: 360,
     wpts: [
-      { t: 0.00, x: 0.30, y: 1.35, z: 0.05 },    // pull back
-      { t: 0.45, x: 0.30, y: 1.40, z: 1.55 },    // thrust extended
-      { t: 1.00, x: REST_LOCAL.x, y: REST_LOCAL.y, z: REST_LOCAL.z },
+      { t: 0.00, x: REST.x,        y: REST.y,        z: REST.z },
+      { t: 0.20, x:  0.20,         y: 1.20,          z:  0.45 },         // Pflug (mid-low forward)
+      { t: 0.50, x:  0.30,         y: 1.55,          z:  1.85 },         // Langort thrust extended
+      { t: 0.75, x:  0.20,         y: 1.20,          z:  0.45 },         // pull back to Pflug
+      { t: 1.00, x: REST.x,        y: REST.y,        z: REST.z },
     ],
   },
 };
@@ -193,10 +226,10 @@ function localToWorld(pos, yaw, local, out = new THREE.Vector3()) {
   return out;
 }
 
-// Resolve the current weapon-tip target this frame from attack state (or rest).
-function computeAttackTipTarget(state, pos, yaw, out) {
+// Resolve the current weapon-tip target this frame from attack state (or breathing rest).
+function computeAttackTipTarget(state, pos, yaw, mvSpeed, out) {
   const now = performance.now();
-  let local = REST_LOCAL;
+  let local = restLocal(now, mvSpeed);
   if (state.attack && state.attack.type) {
     const elapsed = now - state.attack.start;
     const t = elapsed / state.attack.duration;
@@ -712,7 +745,8 @@ function frame(t) {
     // Compute target weapon tip from attack state (or rest), then lerp the actual tip
     // toward it with mass-dependent rate (heavier = more lag = more weight).
     state.weaponTipPrev.copy(state.weaponTipWorld);
-    computeAttackTipTarget(state, state.local.pos, state.local.yaw, state.weaponTipTarget);
+    const mvSpeed = Math.hypot(mvWX, mvWZ) * speed;
+    computeAttackTipTarget(state, state.local.pos, state.local.yaw, mvSpeed, state.weaponTipTarget);
     const wMass = RUNTIME.weapon.mass || 1.0;
     const k = Math.min(1, dt * (12 / wMass));
     state.weaponTipWorld.lerp(state.weaponTipTarget, k);
@@ -720,7 +754,6 @@ function frame(t) {
 
     // Pose rig.
     poseRig(state.rig, state.local.pos, state.local.yaw, state.weaponTipWorld);
-    const mvSpeed = Math.hypot(mvWX, mvWZ) * speed;
     // Decompose tip velocity into player-local axes for body-lean animation.
     const cy = Math.cos(-state.local.yaw), sy = Math.sin(-state.local.yaw);
     const swingLat =  cy * state.weaponTipVel.x + sy * state.weaponTipVel.z;

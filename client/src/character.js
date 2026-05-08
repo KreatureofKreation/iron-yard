@@ -323,25 +323,31 @@ export function buildCharacter({ color = 0x9aa0a8, accent = 0xc8a97e, isLocal = 
       anim.swayPhase += dt;
 
       if (alive) {
-        // Idle breathing
-        const breath = (1 - Math.min(1, mvSpeed)) * 0.025 * Math.sin(anim.swayPhase * 1.6);
+        // Idle breathing — chest expands subtly when standing still.
+        const breath = (1 - Math.min(1, mvSpeed)) * 0.030 * Math.sin(anim.swayPhase * 1.6);
         torso.scale.y = 1 + breath;
 
-        // Walk cycle — knees and ankles articulate.
+        // Walk cycle — bigger stride, vertical bob, foot lift.
         const stride = THREE.MathUtils.clamp(mvSpeed / 5, 0, 1);
-        anim.walkPhase += dt * (4 + mvSpeed * 1.2) * stride;
+        anim.walkPhase += dt * (4.6 + mvSpeed * 1.0) * stride;
         const phase = anim.walkPhase;
 
-        const lThighSwing =  Math.sin(phase) * 0.7 * stride;
-        const rThighSwing = -Math.sin(phase) * 0.7 * stride;
+        const lThighSwing =  Math.sin(phase) * 0.95 * stride;
+        const rThighSwing = -Math.sin(phase) * 0.95 * stride;
         legL.thigh.rotation.x = lThighSwing;
         legR.thigh.rotation.x = rThighSwing;
-        // Knee bend: leg lifts forward → knee bends. Always slight base bend.
-        legL.shin.rotation.x = Math.max(0.05, lThighSwing * 0.55);
-        legR.shin.rotation.x = Math.max(0.05, rThighSwing * 0.55);
-        // Foot pitch follows shin so sole stays roughly toward ground while walking.
-        legL.foot.rotation.x = -lThighSwing * 0.35;
-        legR.foot.rotation.x = -rThighSwing * 0.35;
+        // Knee bend: stronger when leg lifts forward, near-straight when planted.
+        legL.shin.rotation.x = Math.max(0.04, lThighSwing * 0.85);
+        legR.shin.rotation.x = Math.max(0.04, rThighSwing * 0.85);
+        // Foot pitch — toes drop on lift, ankle rolls on plant.
+        legL.foot.rotation.x = -lThighSwing * 0.45;
+        legR.foot.rotation.x = -rThighSwing * 0.45;
+        // Foot lift: lifting leg moves up slightly along Y while planted leg stays.
+        legL.foot.position.y = Math.max(0, lThighSwing) * 0.04;
+        legR.foot.position.y = Math.max(0, rThighSwing) * 0.04;
+        // Whole-body vertical bob (subtle — happens twice per stride). Added on top of
+        // whatever poseRig() already set (player's world Y / jump altitude).
+        root.position.y += (Math.abs(Math.sin(phase)) - 0.5) * 0.04 * stride;
 
         // Left arm posing.
         if (grip === "two-hand") {
