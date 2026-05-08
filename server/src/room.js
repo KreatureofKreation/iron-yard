@@ -197,6 +197,7 @@ export class Room {
       const stunned  = now < p.stunUntilMs;
       const dead     = !p.alive;
       let disarmed   = now < p.disarmedUntilMs;
+      const knocked  = now < p.knockedDownUntilMs;
       // Early pickup: while disarmed and within 1m of sword, restore.
       if (disarmed && !stunned && !dead) {
         const sw = this.physics.swordState(p.id);
@@ -209,7 +210,7 @@ export class Room {
           }
         }
       }
-      if (stunned || dead || disarmed) {
+      if (stunned || dead || disarmed || knocked) {
         this.physics.setSwordGravity(p.id, true);
       } else {
         this.physics.setSwordGravity(p.id, false);
@@ -398,6 +399,7 @@ export class Room {
         stunMsLeft:    Math.max(0, p.stunUntilMs    - Date.now()),
         bleedMsLeft:   Math.max(0, p.bleedUntilMs   - Date.now()),
         disarmedMsLeft:Math.max(0, p.disarmedUntilMs- Date.now()),
+        knockedMsLeft: Math.max(0, p.knockedDownUntilMs - Date.now()),
         alive: p.alive,
         weaponTip: p.weaponTip,
         swinging: p.swinging,

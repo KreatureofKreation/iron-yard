@@ -104,6 +104,11 @@ export function resolveHits(players, nowMs, physics) {
     a.lastHitAtMs.set(t.id, nowMs);
     a.stamina = Math.max(0, a.stamina - CONFIG.PLAYER.staminaSwingCost);
 
+    // Knockdown: hits > 60 dmg topple victim for 1.5s (input locked, sword dropped).
+    if (dmg > 60 && t.hp > 0) {
+      t.knockedDownUntilMs = Math.max(t.knockedDownUntilMs, nowMs + 1500);
+    }
+
     // Knockback impulse (separate channel from movement vel).
     const kb = norm(sub(t.pos, a.pos));
     const kbMag = 2.5 + (zone === "head" ? 1.5 : 0.5) + tipSpeed * 0.10;
