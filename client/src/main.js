@@ -670,6 +670,11 @@ net.on("hit", (m) => {
       spark(scene, m.at, 0.30 + Math.random() * 0.30, 0xc8a070);
     }
   }
+  // Impact flash ring — billboard ring that expands and fades. Reads as a quick
+  // cinematic thump at the contact point regardless of damage type.
+  if (m.dmg > 0 && m.at) {
+    impactFlash(scene, m.at, m.dmg);
+  }
   if (m.kill) {
     SFX.death();
     const a = nameFor(m.from);
@@ -1427,6 +1432,38 @@ function tickFallingProps(dt) {
   // Helm physics is now driven by Rapier (see ragdoll.js tickRagdolls). Kept as a
   // no-op so the existing call site in frame() doesn't change.
   void dt;
+}
+
+// Impact flash — expanding billboard ring at the contact point. Brief cinematic thump.
+function impactFlash(scene, at, dmg = 20) {
+  const initialR = 0.10 + Math.min(0.10, dmg / 200);
+  const finalR = initialR * 6;
+  const geo = new THREE.RingGeometry(initialR * 0.6, initialR, 24);
+  const mat = new THREE.MeshBasicMaterial({
+    color: 0xffe0a0, transparent: true, opacity: 0.9,
+    side: THREE.DoubleSide, depthWrite: false,
+  });
+  const ring = new THREE.Mesh(geo, mat);
+  ring.position.set(at.x, at.y, at.z);
+  scene.add(ring);
+  const start = performance.now();
+  const lifeMs = 180;
+  const tick = () => {
+    const e = (performance.now() - start) / lifeMs;
+    if (e >= 1) {
+      scene.remove(ring);
+      ring.geometry.dispose();
+      ring.material.dispose();
+      return;
+    }
+    // Billboard toward camera + scale + fade.
+    ring.lookAt(camera.position);
+    const s = 1 + e * (finalR / initialR - 1);
+    ring.scale.set(s, s, s);
+    ring.material.opacity = 0.9 * (1 - e);
+    requestAnimationFrame(tick);
+  };
+  requestAnimationFrame(tick);
 }
 
 // Hit spark.

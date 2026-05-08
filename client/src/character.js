@@ -293,7 +293,7 @@ export function buildCharacter({ color = 0x9aa0a8, accent = 0xc8a97e, isLocal = 
     spear:     0xa8e6ff,
     swordshield:0xfff0c0,
   }[weaponKey] ?? 0xfff0c0;
-  const TRAIL_LEN = 14;
+  const TRAIL_LEN = 22;
   const trailPts = new Float32Array(TRAIL_LEN * 3);
   const trailGeo = new THREE.BufferGeometry();
   trailGeo.setAttribute("position", new THREE.BufferAttribute(trailPts, 3));
