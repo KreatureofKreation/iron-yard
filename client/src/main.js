@@ -129,18 +129,18 @@ function shoulderWorld(pos, yaw, out = new THREE.Vector3()) {
 // the server's spring toward these targets, so heavier weapons still feel heavy.
 //
 // Rest pose varies by weapon style. Each entry is the player-local tip position.
-//   sword (one/two-hand): Vom Tag      — tip up + back over right shoulder
-//   sword+shield:         High Guard   — tighter, tip behind right shoulder
-//   spear:                Mittel/Vor   — middle guard, tip forward at chest level
+// Relaxed carry positions — sword hangs at side angled forward, not held in a
+// combat-ready guard. Combat-ready Vom Tag was the prior default but read as
+// "stuck up high" during idle. Attack windups animate UP TO the guard then strike.
+//   sword (one/two-hand): tip down-forward at right side (Coda Lunga / relaxed carry)
+//   sword+shield:         tip down-forward, slightly tighter to body
+//   spear:                Mittel/Vor — tip forward at chest level (spear's natural ready)
 const REST_BY_KEY = {
-  "two-hand":  { x: 0.30, y: 2.00, z: -0.10 },
-  "one-hand":  { x: 0.30, y: 2.00, z: -0.10 },
-  "shield":    { x: 0.40, y: 1.95, z: -0.15 },
+  "two-hand":  { x: 0.45, y: 1.00, z:  0.55 },
+  "one-hand":  { x: 0.45, y: 1.00, z:  0.55 },
+  "shield":    { x: 0.45, y: 1.10, z:  0.40 },
   "spear":     { x: 0.20, y: 1.55, z:  1.40 },
-  // Mace — head rests on right shoulder, slightly lower than sword's Vom Tag because
-  // the mace head is heavy and tends to settle. Per ARMA forum: held same as a sword
-  // for foot-soldier; primary strikes are committed sideways blows.
-  "mace":      { x: 0.40, y: 1.85, z: -0.05 },
+  "mace":      { x: 0.45, y: 1.05, z:  0.40 },
 };
 const REST_LOCAL_BASE = REST_BY_KEY["one-hand"];
 
