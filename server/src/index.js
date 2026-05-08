@@ -166,6 +166,13 @@ wss.on("connection", (sock) => {
       return;
     }
 
+    // Spectators can chat (no game inputs).
+    if (!player && sock._spectator && msg.t === "chat" && typeof msg.text === "string") {
+      const text = msg.text.slice(0, 200);
+      broadcast({ t: "chat", from: 0, name: "[spectator]", text });
+      return;
+    }
+
     if (!player) return;
 
     if (msg.t === "input") {
