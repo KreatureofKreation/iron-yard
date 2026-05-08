@@ -137,11 +137,16 @@ const REST_BY_KEY = {
   "one-hand":  { x: 0.30, y: 2.00, z: -0.10 },
   "shield":    { x: 0.40, y: 1.95, z: -0.15 },
   "spear":     { x: 0.20, y: 1.55, z:  1.40 },
+  // Mace — head rests on right shoulder, slightly lower than sword's Vom Tag because
+  // the mace head is heavy and tends to settle. Per ARMA forum: held same as a sword
+  // for foot-soldier; primary strikes are committed sideways blows.
+  "mace":      { x: 0.40, y: 1.85, z: -0.05 },
 };
 const REST_LOCAL_BASE = REST_BY_KEY["one-hand"];
 
 function restBaseFor(weaponKey, grip) {
   if (weaponKey === "spear") return REST_BY_KEY.spear;
+  if (weaponKey === "mace")  return REST_BY_KEY.mace;
   return REST_BY_KEY[grip] || REST_BY_KEY["one-hand"];
 }
 
@@ -212,8 +217,59 @@ const SPEAR_PATHS = {
   },
 };
 
+// Mace — heavy committed strikes per ARMA discussion. Primary is sideways horizontal
+// blow (prevents slipping). Overhead is the natural finisher. Stab is a weak forward
+// jab with the head (the mace has no point — included for completeness/utility).
+const MACE_REST = REST_BY_KEY.mace;
+const MACE_PATHS = {
+  // Sideways blow R — wind across to left, drive horizontal arc, follow through right.
+  swingR: {
+    duration: 500,
+    wpts: [
+      { t: 0.00, x: MACE_REST.x, y: MACE_REST.y, z: MACE_REST.z },               // shoulder rest
+      { t: 0.20, x: -0.65,       y: 1.60,        z: 0.05 },                       // wind across to left
+      { t: 0.50, x:  0.10,       y: 1.50,        z: 1.05 },                       // strike apex extended
+      { t: 0.78, x:  0.85,       y: 1.35,        z: 0.45 },                       // follow-through right hip
+      { t: 1.00, x: MACE_REST.x, y: MACE_REST.y, z: MACE_REST.z },
+    ],
+  },
+  swingL: {
+    duration: 500,
+    wpts: [
+      { t: 0.00, x: MACE_REST.x, y: MACE_REST.y, z: MACE_REST.z },
+      { t: 0.20, x:  0.65,       y: 1.60,        z: 0.05 },
+      { t: 0.50, x: -0.10,       y: 1.50,        z: 1.05 },
+      { t: 0.78, x: -0.85,       y: 1.35,        z: 0.45 },
+      { t: 1.00, x: MACE_REST.x, y: MACE_REST.y, z: MACE_REST.z },
+    ],
+  },
+  // Heavy overhead — high wind to head-crusher, descending vertical strike.
+  overhead: {
+    duration: 600,
+    wpts: [
+      { t: 0.00, x: MACE_REST.x, y: MACE_REST.y, z: MACE_REST.z },
+      { t: 0.22, x:  0.45,       y: 2.35,        z: -0.30 },                       // raised high
+      { t: 0.55, x:  0.15,       y: 1.30,        z:  0.95 },                       // strike forward + down
+      { t: 0.82, x: -0.05,       y: 0.55,        z:  0.85 },                       // follow-through low
+      { t: 1.00, x: MACE_REST.x, y: MACE_REST.y, z: MACE_REST.z },
+    ],
+  },
+  // Forward jab with the head — short, weak compared to sword stab.
+  stab: {
+    duration: 380,
+    wpts: [
+      { t: 0.00, x: MACE_REST.x, y: MACE_REST.y, z: MACE_REST.z },
+      { t: 0.25, x: 0.30,        y: 1.45,        z: 0.10 },                       // pull back low
+      { t: 0.55, x: 0.30,        y: 1.40,        z: 1.10 },                       // jab forward
+      { t: 0.80, x: 0.30,        y: 1.45,        z: 0.20 },
+      { t: 1.00, x: MACE_REST.x, y: MACE_REST.y, z: MACE_REST.z },
+    ],
+  },
+};
+
 function pathsFor(weaponKey) {
   if (weaponKey === "spear") return SPEAR_PATHS;
+  if (weaponKey === "mace")  return MACE_PATHS;
   return ATTACK_PATHS;
 }
 const ATTACK_PATHS = {
