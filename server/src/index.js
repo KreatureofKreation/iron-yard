@@ -148,6 +148,7 @@ wss.on("connection", (sock) => {
       }
       player = room.addPlayer(msg.name, sock, msg.weapon);
       if (typeof msg.sessionId === "string") player.sessionId = msg.sessionId;
+      if (typeof msg.color === "number") player.color = msg.color | 0;
       send(sock, {
         t: "welcome",
         id: player.id,

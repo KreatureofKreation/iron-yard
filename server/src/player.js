@@ -10,6 +10,7 @@ export function makePlayer(name, spawn, weaponKey) {
     id: nextId++,
     name: (name || "knight").slice(0, 16),
     weaponKey: wkey,
+    color: 0,
     pos: clone(spawn.pos),
     vel: v(),
     impulse: v(),              // external knockback velocity, decays each tick

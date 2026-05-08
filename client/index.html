@@ -28,6 +28,13 @@
       #menu button:hover { background:#4a3520; }
       #menu button.weapon { padding: .4rem .7rem; font-size:.95rem; opacity:0.7; }
       #menu button.weapon.active { opacity:1; background:#5c4226; box-shadow: 0 0 8px rgba(200,170,130,0.6); }
+      #menu button.color-swatch {
+        width:34px; height:34px; padding:0; border:2px solid #333;
+        border-radius:50%; cursor:pointer; opacity:0.6;
+      }
+      #menu button.color-swatch.active {
+        opacity:1; border-color:#c8a97e; box-shadow:0 0 8px rgba(200,170,130,0.6);
+      }
       #menu #enter { font-size:1.4rem; padding:.7rem 2.5rem; letter-spacing:0.15em; }
       #menu .row { display:flex; gap:.6rem; }
       #status { color:#c08; font-size:.9rem; min-height:1.2em; }
@@ -123,6 +130,15 @@
         <button class="weapon" data-weapon="spear">Spear</button>
       </div>
       <div id="weapon-blurb" class="sub" style="min-height:1.4em; color:#aaa;"></div>
+      <div id="color-picker" style="display:flex; gap:.5rem; align-items:center;">
+        <span class="sub" style="color:#888;">color</span>
+        <button class="color-swatch" data-color="0x6b8a9a" style="background:#6b8a9a;"></button>
+        <button class="color-swatch" data-color="0x8a6b5a" style="background:#8a6b5a;"></button>
+        <button class="color-swatch" data-color="0x6a7a4a" style="background:#6a7a4a;"></button>
+        <button class="color-swatch" data-color="0x7a5a7a" style="background:#7a5a7a;"></button>
+        <button class="color-swatch" data-color="0x9a8a3a" style="background:#9a8a3a;"></button>
+        <button class="color-swatch" data-color="0x4a4a4a" style="background:#4a4a4a;"></button>
+      </div>
       <button id="enter">PLAY</button>
       <input id="server" placeholder="ws://host:8080" value="" />
       <div id="status"></div>

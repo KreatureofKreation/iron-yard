@@ -77,7 +77,11 @@ const PALETTE = [
   { color: 0x6a7a4a, accent: 0xc8a97e },  // moss
   { color: 0x7a5a7a, accent: 0xd1a05a },  // mauve
 ];
-function paletteFor(id) { return PALETTE[(id - 1) % PALETTE.length]; }
+function paletteFor(id, customColor = 0) {
+  const base = PALETTE[(id - 1) % PALETTE.length];
+  if (customColor) return { color: customColor, accent: base.accent };
+  return base;
+}
 
 // Match defaults; updated when welcome arrives.
 let CLIENT_MATCH_INTERMISSION_MS = 6000;
@@ -209,7 +213,7 @@ net.on("welcome", (m) => {
   spawnArenaProps(scene, propPositions);
   // Spectators have no local rig; camera will pick a target each frame.
   if (!state.spectator) {
-    const pal = paletteFor(m.id);
+    const pal = paletteFor(m.id, state.colorPick);
     state.rig = buildCharacter({ ...pal, isLocal: true, weaponKey: state.weaponKey });
     scene.add(state.rig.root);
     HUD.setHp(state.local.hp, RUNTIME.player.hp);
@@ -277,13 +281,14 @@ net.on("snap", (m) => {
       continue;
     }
     let r = state.remotes.get(p.id);
-    if (!r || r.weaponKey !== p.weaponKey) {
+    if (!r || r.weaponKey !== p.weaponKey || r.color !== p.color) {
       if (r) { scene.remove(r.rig.root); }
-      const pal = paletteFor(p.id);
+      const pal = paletteFor(p.id, p.color);
       const rig = buildCharacter({ ...pal, weaponKey: p.weaponKey || "arming" });
       scene.add(rig.root);
       r = { rig, buf: [], hp: p.hp, name: p.name, score: 0, deaths: 0,
-            weaponKey: p.weaponKey || "arming", lastPos: { ...p.pos }, invulnMs: 0 };
+            weaponKey: p.weaponKey || "arming", color: p.color || 0,
+            lastPos: { ...p.pos }, invulnMs: 0 };
       state.remotes.set(p.id, r);
     }
     r.buf.push({
@@ -1068,6 +1073,19 @@ for (const b of wpnBtns) {
   b.addEventListener("click", () => { SFX.unlockAudio(); SFX.click(); setWeapon(b.dataset.weapon); });
 }
 
+// Color picker.
+const colorBtns = [...document.querySelectorAll("button.color-swatch")];
+function setColor(hex) {
+  state.colorPick = hex;
+  localStorage.setItem("ironyard.color", String(hex));
+  for (const b of colorBtns) b.classList.toggle("active", parseInt(b.dataset.color) === hex);
+}
+const initialColor = parseInt(localStorage.getItem("ironyard.color") || "0x6b8a9a");
+setColor(Number.isFinite(initialColor) ? initialColor : 0x6b8a9a);
+for (const b of colorBtns) {
+  b.addEventListener("click", () => { SFX.unlockAudio(); SFX.click(); setColor(parseInt(b.dataset.color)); });
+}
+
 // Career stats display.
 const careerEl = document.getElementById("career");
 if (careerEl) careerEl.textContent = "career · " + statsHtml();
@@ -1173,7 +1191,7 @@ async function play() {
                   Math.random().toString(36).slice(2) + Date.now().toString(36);
       localStorage.setItem("ironyard.session", sessionId);
     }
-    const joinMsg = { t: "join", name, weapon: state.weaponKey, sessionId };
+    const joinMsg = { t: "join", name, weapon: state.weaponKey, sessionId, color: state.colorPick };
     net.rememberJoin(joinMsg);
     net.send(joinMsg);
     HUD.setMenu(false);

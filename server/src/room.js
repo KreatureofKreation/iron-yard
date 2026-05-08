@@ -391,6 +391,7 @@ export class Room {
         id: p.id,
         name: p.name,
         weaponKey: p.weaponKey,
+        color: p.color || 0,
         pos: p.pos,
         yaw: p.yaw,
         pitch: p.pitch,
