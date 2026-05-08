@@ -172,46 +172,43 @@ const REST = REST_LOCAL_BASE;
 // swings are wide shaft sweeps; overhead is a high-Ober chop. Reach extends to spear length.
 const SPEAR_REST = REST_BY_KEY.spear;
 const SPEAR_PATHS = {
-  // Vor → wind back to high Mittel → thrust to Langort (extended). Spear's bread + butter.
   stab: {
-    duration: 320,
+    duration: 340,
     wpts: [
-      { t: 0.00, x: SPEAR_REST.x, y: SPEAR_REST.y, z: SPEAR_REST.z },         // Mittel/Vor
-      { t: 0.18, x: 0.20,         y: 1.50,         z: 0.40 },                  // wind back
-      { t: 0.50, x: 0.20,         y: 1.55,         z: 2.40 },                  // Langort thrust (full reach)
-      { t: 0.80, x: 0.20,         y: 1.50,         z: 0.60 },                  // pull back to Mittel
+      { t: 0.00, x: SPEAR_REST.x, y: SPEAR_REST.y, z: SPEAR_REST.z },
+      { t: 0.20, x: 0.20,         y: 1.55,         z: 0.10 },                  // coil back tight
+      { t: 0.50, x: 0.20,         y: 1.55,         z: 2.70 },                  // full Langort reach
+      { t: 0.80, x: 0.20,         y: 1.50,         z: 0.50 },
       { t: 1.00, x: SPEAR_REST.x, y: SPEAR_REST.y, z: SPEAR_REST.z },
     ],
   },
-  // Ober — high guard chop downward (less common for spear, but pole-axe style).
   overhead: {
-    duration: 540,
+    duration: 580,
     wpts: [
       { t: 0.00, x: SPEAR_REST.x, y: SPEAR_REST.y, z: SPEAR_REST.z },
-      { t: 0.22, x: 0.30,         y: 2.30,         z: -0.20 },                  // raise to Ober
-      { t: 0.55, x: 0.20,         y: 1.40,         z: 1.40 },                   // chop forward + down
-      { t: 0.85, x: 0.20,         y: 1.30,         z: 0.80 },
+      { t: 0.22, x: 0.50,         y: 2.65,         z: -0.40 },                  // raise high
+      { t: 0.55, x: 0.20,         y: 1.10,         z: 1.95 },                   // chop down + far forward
+      { t: 0.82, x: 0.20,         y: 0.85,         z: 0.80 },
       { t: 1.00, x: SPEAR_REST.x, y: SPEAR_REST.y, z: SPEAR_REST.z },
     ],
   },
-  // Wide shaft sweep R — tip arcs across to right side at chest height.
   swingR: {
-    duration: 460,
+    duration: 500,
     wpts: [
       { t: 0.00, x: SPEAR_REST.x, y: SPEAR_REST.y, z: SPEAR_REST.z },
-      { t: 0.22, x: -0.80,        y: 1.45,         z:  0.80 },                  // wind across to left
-      { t: 0.55, x:  0.10,        y: 1.50,         z:  1.80 },                  // sweep through center, extended
-      { t: 0.80, x:  1.00,        y: 1.30,         z:  0.80 },                  // follow-through right
+      { t: 0.22, x: -1.10,        y: 1.55,         z:  0.50 },                  // wind hard left
+      { t: 0.55, x:  0.10,        y: 1.50,         z:  2.30 },                  // sweep extended
+      { t: 0.80, x:  1.40,        y: 1.10,         z:  0.50 },                  // far right follow-through
       { t: 1.00, x: SPEAR_REST.x, y: SPEAR_REST.y, z: SPEAR_REST.z },
     ],
   },
   swingL: {
-    duration: 460,
+    duration: 500,
     wpts: [
       { t: 0.00, x: SPEAR_REST.x, y: SPEAR_REST.y, z: SPEAR_REST.z },
-      { t: 0.22, x:  0.80,        y: 1.45,         z:  0.80 },
-      { t: 0.55, x: -0.10,        y: 1.50,         z:  1.80 },
-      { t: 0.80, x: -1.00,        y: 1.30,         z:  0.80 },
+      { t: 0.22, x:  1.10,        y: 1.55,         z:  0.50 },
+      { t: 0.55, x: -0.10,        y: 1.50,         z:  2.30 },
+      { t: 0.80, x: -1.40,        y: 1.10,         z:  0.50 },
       { t: 1.00, x: SPEAR_REST.x, y: SPEAR_REST.y, z: SPEAR_REST.z },
     ],
   },
@@ -222,46 +219,45 @@ const SPEAR_PATHS = {
 // jab with the head (the mace has no point — included for completeness/utility).
 const MACE_REST = REST_BY_KEY.mace;
 const MACE_PATHS = {
-  // Sideways blow R — wind across to left, drive horizontal arc, follow through right.
+  // Heavy committed sideways blows. Bigger arcs than sword — momentum-driven.
   swingR: {
-    duration: 500,
+    duration: 540,
     wpts: [
-      { t: 0.00, x: MACE_REST.x, y: MACE_REST.y, z: MACE_REST.z },               // shoulder rest
-      { t: 0.20, x: -0.65,       y: 1.60,        z: 0.05 },                       // wind across to left
-      { t: 0.50, x:  0.10,       y: 1.50,        z: 1.05 },                       // strike apex extended
-      { t: 0.78, x:  0.85,       y: 1.35,        z: 0.45 },                       // follow-through right hip
+      { t: 0.00, x: MACE_REST.x, y: MACE_REST.y, z: MACE_REST.z },
+      { t: 0.22, x: -1.00,       y: 1.80,        z: -0.20 },                       // wind way back over left shoulder
+      { t: 0.52, x:  0.15,       y: 1.45,        z:  1.40 },                       // heavy strike apex
+      { t: 0.80, x:  1.20,       y: 0.75,        z:  0.20 },                       // crashes through to right hip
       { t: 1.00, x: MACE_REST.x, y: MACE_REST.y, z: MACE_REST.z },
     ],
   },
   swingL: {
-    duration: 500,
+    duration: 540,
     wpts: [
       { t: 0.00, x: MACE_REST.x, y: MACE_REST.y, z: MACE_REST.z },
-      { t: 0.20, x:  0.65,       y: 1.60,        z: 0.05 },
-      { t: 0.50, x: -0.10,       y: 1.50,        z: 1.05 },
-      { t: 0.78, x: -0.85,       y: 1.35,        z: 0.45 },
+      { t: 0.22, x:  1.00,       y: 1.80,        z: -0.20 },
+      { t: 0.52, x: -0.15,       y: 1.45,        z:  1.40 },
+      { t: 0.80, x: -1.20,       y: 0.75,        z:  0.20 },
       { t: 1.00, x: MACE_REST.x, y: MACE_REST.y, z: MACE_REST.z },
     ],
   },
-  // Heavy overhead — high wind to head-crusher, descending vertical strike.
+  // Skull-crusher overhead — load way up, drop it through center.
   overhead: {
-    duration: 600,
+    duration: 640,
     wpts: [
       { t: 0.00, x: MACE_REST.x, y: MACE_REST.y, z: MACE_REST.z },
-      { t: 0.22, x:  0.45,       y: 2.35,        z: -0.30 },                       // raised high
-      { t: 0.55, x:  0.15,       y: 1.30,        z:  0.95 },                       // strike forward + down
-      { t: 0.82, x: -0.05,       y: 0.55,        z:  0.85 },                       // follow-through low
+      { t: 0.25, x:  0.55,       y: 2.70,        z: -0.50 },                       // sky-high wind
+      { t: 0.55, x:  0.15,       y: 1.10,        z:  1.30 },                       // smash apex
+      { t: 0.85, x: -0.20,       y: 0.10,        z:  0.95 },                       // ground follow-through
       { t: 1.00, x: MACE_REST.x, y: MACE_REST.y, z: MACE_REST.z },
     ],
   },
-  // Forward jab with the head — short, weak compared to sword stab.
   stab: {
-    duration: 380,
+    duration: 400,
     wpts: [
       { t: 0.00, x: MACE_REST.x, y: MACE_REST.y, z: MACE_REST.z },
-      { t: 0.25, x: 0.30,        y: 1.45,        z: 0.10 },                       // pull back low
-      { t: 0.55, x: 0.30,        y: 1.40,        z: 1.10 },                       // jab forward
-      { t: 0.80, x: 0.30,        y: 1.45,        z: 0.20 },
+      { t: 0.25, x: 0.30,        y: 1.40,        z: -0.05 },
+      { t: 0.55, x: 0.30,        y: 1.40,        z:  1.30 },
+      { t: 0.80, x: 0.30,        y: 1.45,        z:  0.20 },
       { t: 1.00, x: MACE_REST.x, y: MACE_REST.y, z: MACE_REST.z },
     ],
   },
@@ -273,48 +269,47 @@ function pathsFor(weaponKey) {
   return ATTACK_PATHS;
 }
 const ATTACK_PATHS = {
-  // Mittelhau from left to right — wind to Wechsel/left-Tail, slash through Langort
-  // (extended forward chest height), end on right hip.
+  // Mittelhau cross-cut left → right. Extreme wind across body, full extension forward,
+  // sweeping follow-through past hip. Bigger arcs read as committed swings.
   swingR: {
-    duration: 420,
+    duration: 460,
     wpts: [
-      { t: 0.00, x: REST.x,        y: REST.y,        z: REST.z },        // start at Vom Tag
-      { t: 0.18, x: -0.55,         y: 1.30,          z: -0.10 },         // wind: left Wechsel
-      { t: 0.45, x:  0.10,         y: 1.45,          z:  1.25 },         // strike apex (Langort)
-      { t: 0.70, x:  0.80,         y: 1.05,          z:  0.50 },         // follow-through right hip
-      { t: 1.00, x: REST.x,        y: REST.y,        z: REST.z },        // recover to Vom Tag
+      { t: 0.00, x: REST.x,        y: REST.y,        z: REST.z },
+      { t: 0.20, x: -0.95,         y: 1.65,          z: -0.30 },         // wind: deep left over shoulder
+      { t: 0.48, x:  0.20,         y: 1.55,          z:  1.70 },         // strike apex extended forward
+      { t: 0.72, x:  1.15,         y: 0.85,          z:  0.30 },         // follow-through past right hip
+      { t: 1.00, x: REST.x,        y: REST.y,        z: REST.z },
     ],
   },
-  // Mittelhau from right to left — mirror.
   swingL: {
-    duration: 420,
+    duration: 460,
     wpts: [
       { t: 0.00, x: REST.x,        y: REST.y,        z: REST.z },
-      { t: 0.18, x:  0.55,         y: 1.30,          z: -0.10 },         // wind: right Wechsel
-      { t: 0.45, x: -0.10,         y: 1.45,          z:  1.25 },         // Langort
-      { t: 0.70, x: -0.80,         y: 1.05,          z:  0.50 },
+      { t: 0.20, x:  0.95,         y: 1.65,          z: -0.30 },
+      { t: 0.48, x: -0.20,         y: 1.55,          z:  1.70 },
+      { t: 0.72, x: -1.15,         y: 0.85,          z:  0.30 },
       { t: 1.00, x: REST.x,        y: REST.y,        z: REST.z },
     ],
   },
-  // Oberhau (descending strike) from Vom Tag → wind high → cut down through center.
+  // Oberhau — load above the head, drive through chest to ankle on the far side.
   overhead: {
-    duration: 520,
+    duration: 560,
     wpts: [
-      { t: 0.00, x: REST.x,        y: REST.y,        z: REST.z },        // Vom Tag
-      { t: 0.18, x:  0.40,         y: 2.30,          z: -0.30 },         // High Vom Tag wind
-      { t: 0.45, x:  0.15,         y: 1.65,          z:  1.05 },         // strike forward at chest
-      { t: 0.75, x: -0.05,         y: 0.65,          z:  0.95 },         // Pflug-like end (low)
+      { t: 0.00, x: REST.x,        y: REST.y,        z: REST.z },
+      { t: 0.22, x:  0.55,         y: 2.65,          z: -0.45 },         // wind high + back
+      { t: 0.50, x:  0.15,         y: 1.30,          z:  1.55 },         // strike apex forward at chest
+      { t: 0.78, x: -0.30,         y: 0.20,          z:  1.10 },         // chop through to opposite ankle
       { t: 1.00, x: REST.x,        y: REST.y,        z: REST.z },
     ],
   },
-  // Stab: Pflug → Langort thrust → recover.
+  // Stab — coil back hard, drive forward with full body extension.
   stab: {
-    duration: 360,
+    duration: 380,
     wpts: [
       { t: 0.00, x: REST.x,        y: REST.y,        z: REST.z },
-      { t: 0.20, x:  0.20,         y: 1.20,          z:  0.45 },         // Pflug (mid-low forward)
-      { t: 0.50, x:  0.30,         y: 1.55,          z:  1.85 },         // Langort thrust extended
-      { t: 0.75, x:  0.20,         y: 1.20,          z:  0.45 },         // pull back to Pflug
+      { t: 0.22, x:  0.10,         y: 1.10,          z:  0.05 },         // pull back tight to body
+      { t: 0.50, x:  0.30,         y: 1.55,          z:  2.20 },         // thrust extended
+      { t: 0.78, x:  0.20,         y: 1.20,          z:  0.30 },
       { t: 1.00, x: REST.x,        y: REST.y,        z: REST.z },
     ],
   },

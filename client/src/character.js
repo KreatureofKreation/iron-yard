@@ -389,10 +389,12 @@ export function buildCharacter({ color = 0x9aa0a8, accent = 0xc8a97e, isLocal = 
           legL.thigh.rotation.z = 0;
         }
 
-        // Idle torso sway + lean from swing motion.
+        // Idle torso sway + dramatic lean from swing motion. Tip velocity drives a
+        // body-twist toward the strike direction — visible weight shift, not just
+        // an arm flick.
         const idleSway = Math.sin(anim.swayPhase * 1.2) * 0.02;
-        anim.leanZ = (anim.leanZ || 0) + (THREE.MathUtils.clamp(swingLat * 0.06, -0.3, 0.3) - (anim.leanZ || 0)) * Math.min(1, dt * 12);
-        anim.leanX = (anim.leanX || 0) + (THREE.MathUtils.clamp(swingFwd * 0.04, -0.25, 0.25) - (anim.leanX || 0)) * Math.min(1, dt * 12);
+        anim.leanZ = (anim.leanZ || 0) + (THREE.MathUtils.clamp(swingLat * 0.10, -0.55, 0.55) - (anim.leanZ || 0)) * Math.min(1, dt * 14);
+        anim.leanX = (anim.leanX || 0) + (THREE.MathUtils.clamp(swingFwd * 0.08, -0.45, 0.45) - (anim.leanX || 0)) * Math.min(1, dt * 14);
         torso.rotation.z = idleSway + anim.leanZ;
         torso.rotation.x = anim.leanX;
         // Active-ragdoll torso wobble layered on top. Clamp tightly so the body never
@@ -418,12 +420,13 @@ export function buildCharacter({ color = 0x9aa0a8, accent = 0xc8a97e, isLocal = 
         }
         torso.position.y = Y_CHEST + height * 0.02 + Math.sin(phase * 2) * 0.02 * stride;
 
-        // Hip counter-rotation + foot stagger
-        pelvis.rotation.y = -anim.leanZ * 1.2;
-        pelvis.rotation.x = -anim.leanX * 0.4;
-        const stagger = Math.max(-0.2, Math.min(0.2, anim.leanZ * 0.8));
-        legL.thigh.position.z = stagger * 0.20;
-        legR.thigh.position.z = -stagger * 0.20;
+        // Hip counter-rotation + foot stagger — bigger so the whole body torques
+        // through a swing.
+        pelvis.rotation.y = -anim.leanZ * 1.6;
+        pelvis.rotation.x = -anim.leanX * 0.6;
+        const stagger = Math.max(-0.3, Math.min(0.3, anim.leanZ * 1.2));
+        legL.thigh.position.z = stagger * 0.30;
+        legR.thigh.position.z = -stagger * 0.30;
 
         if (blocking) {
           torso.rotation.x += 0.10;
