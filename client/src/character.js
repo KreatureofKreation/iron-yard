@@ -349,78 +349,9 @@ export function buildCharacter({ color = 0x9aa0a8, accent = 0xc8a97e, isLocal = 
         // whatever poseRig() already set (player's world Y / jump altitude).
         root.position.y += (Math.abs(Math.sin(phase)) - 0.5) * 0.04 * stride;
 
-        // Attack anticipation + impact — animation principle of squash/stretch.
-        // Wind-up dips and twists away; strike apex pops upward; recovery settles.
-        // Phase-driven body anim (matches main.js attackT mapping):
-        //   [0.00 .. 0.30] = WINDUP   — crouch + chamber twist
-        //   [0.30 .. 0.60] = RELEASE  — strike pop + foot stomp
-        //   [0.60 .. 1.00] = RECOVERY — slow unwind back to neutral
-        if (attackT >= 0 && attackT <= 1) {
-          let crouch = 0, surge = 0, recoil = 0;
-          if (attackT < 0.30) {
-            const w = attackT / 0.30;            // 0..1 across windup
-            crouch = -0.10 * Math.sin(w * Math.PI * 0.5);    // dip down
-          } else if (attackT < 0.60) {
-            const w = (attackT - 0.30) / 0.30;   // 0..1 across release
-            const arc = Math.sin(w * Math.PI);
-            crouch = 0.05 * arc;                  // pop up at apex
-            surge  = 0.14 * arc;                  // dive forward through strike
-          } else {
-            const w = (attackT - 0.60) / 0.40;   // 0..1 across recovery
-            recoil = 0.08 * (1 - w);              // sustained forward lean fades back
-          }
-          root.position.y += crouch;
-          torso.rotation.x += surge - recoil;
-
-          // Chest twist — chambers away during windup, snaps through during release,
-          // unwinds during recovery.
-          let dir = 0;
-          if (attackType === "swingR" || attackType === "swingL" || attackType === "overhead") {
-            dir = attackType === "swingL" ? -1 : 1;
-            const twist = attackT < 0.30
-              ? -dir * 0.35 * (attackT / 0.30)
-              : attackT < 0.60
-                ? -dir * 0.35 + dir * 0.85 * ((attackT - 0.30) / 0.30)
-                : dir * 0.50 * (1 - (attackT - 0.60) / 0.40);
-            torso.rotation.y = twist;
-          } else if (attackType === "stab") {
-            // Thrust — head leads, body lunges forward at release.
-            head.rotation.x += attackT < 0.30 ? -0.14 * (attackT / 0.30)
-                              : attackT < 0.60 ? 0.14 * (1 - (attackT - 0.30) / 0.30) : 0;
-          }
-
-          // Lead-foot stomp during release phase (0.30 .. 0.60).
-          const leadIsLeft = dir > 0;
-          if (attackT > 0.30 && attackT < 0.65) {
-            const w = (attackT - 0.30) / 0.35;
-            const stomp = Math.sin(w * Math.PI);
-            if (leadIsLeft) {
-              legL.thigh.rotation.x = -0.55 * stomp;
-              legL.shin.rotation.x  =  0.30 * stomp;
-              legR.thigh.rotation.x =  0.20 * stomp;
-              legR.shin.rotation.x  =  0.10 * stomp;
-            } else {
-              legR.thigh.rotation.x = -0.55 * stomp;
-              legR.shin.rotation.x  =  0.30 * stomp;
-              legL.thigh.rotation.x =  0.20 * stomp;
-              legL.shin.rotation.x  =  0.10 * stomp;
-            }
-            root.position.y -= 0.05 * stomp;
-          }
-
-          // Head tracks the strike — peaks mid-release.
-          if (dir !== 0 && attackT > 0.20 && attackT < 0.75) {
-            const w = (attackT - 0.20) / 0.55;
-            const tracking = Math.sin(w * Math.PI);
-            head.rotation.y = -dir * 0.30 * tracking;
-            helm.rotation.y = -dir * 0.30 * tracking;
-            head.rotation.x += 0.12 * tracking;
-          }
-        } else {
-          torso.rotation.y = 0;
-          head.rotation.y = 0;
-          helm.rotation.y = 0;
-        }
+        // (Attack body anim moved to BOTTOM of alive branch so it applies AFTER idle
+        //  sway/lean — those used to overwrite torso.rotation with `=` and wiped the
+        //  attack pose. See the block right before the death-pose else.)
 
         // Left arm posing.
         if (grip === "two-hand") {
@@ -513,6 +444,102 @@ export function buildCharacter({ color = 0x9aa0a8, accent = 0xc8a97e, isLocal = 
           } else {
             armL.rotation.x = 0.6;
             elbowL.rotation.x = 0.9;
+          }
+        }
+
+        // Attack body-anim — applied LAST so it isn't wiped by idle sway/lean above.
+        // Phase-driven (matches main.js attackT mapping):
+        //   [0.00 .. 0.30] = WINDUP   — crouch + chamber twist
+        //   [0.30 .. 0.60] = RELEASE  — strike pop + lead-foot stomp
+        //   [0.60 .. 1.00] = RECOVERY — unwind to neutral
+        if (attackT >= 0 && attackT <= 1) {
+          let crouch = 0, surge = 0, recoil = 0;
+          if (attackT < 0.30) {
+            const w = attackT / 0.30;
+            crouch = -0.10 * Math.sin(w * Math.PI * 0.5);
+          } else if (attackT < 0.60) {
+            const w = (attackT - 0.30) / 0.30;
+            const arc = Math.sin(w * Math.PI);
+            crouch = 0.05 * arc;
+            surge  = 0.14 * arc;
+          } else {
+            const w = (attackT - 0.60) / 0.40;
+            recoil = 0.08 * (1 - w);
+          }
+          root.position.y += crouch;
+          torso.rotation.x += surge - recoil;
+
+          let dir = 0;
+          if (attackType === "swingR" || attackType === "swingL" || attackType === "overhead") {
+            dir = attackType === "swingL" ? -1 : 1;
+            const twist = attackT < 0.30
+              ? -dir * 0.35 * (attackT / 0.30)
+              : attackT < 0.60
+                ? -dir * 0.35 + dir * 0.85 * ((attackT - 0.30) / 0.30)
+                : dir * 0.50 * (1 - (attackT - 0.60) / 0.40);
+            torso.rotation.y = twist;
+            // Pelvis counter-rotates the opposite way for a wound-spring look.
+            pelvis.rotation.y -= twist * 0.40;
+          } else if (attackType === "stab") {
+            head.rotation.x += attackT < 0.30 ? -0.14 * (attackT / 0.30)
+                              : attackT < 0.60 ? 0.14 * (1 - (attackT - 0.30) / 0.30) : 0;
+            // Stab — both feet drive forward at release.
+            if (attackT > 0.25 && attackT < 0.65) {
+              const w = (attackT - 0.25) / 0.40;
+              const lunge = Math.sin(w * Math.PI);
+              legR.thigh.rotation.x = -0.45 * lunge;
+              legR.shin.rotation.x  =  0.35 * lunge;
+              legL.thigh.rotation.x =  0.30 * lunge;
+              legL.shin.rotation.x  =  0.10 * lunge;
+              root.position.y -= 0.04 * lunge;
+            }
+          } else {
+            torso.rotation.y = 0;
+          }
+
+          // Lead-foot stomp during release phase for swings/overhead.
+          if ((attackType === "swingR" || attackType === "swingL" || attackType === "overhead")
+              && attackT > 0.30 && attackT < 0.65) {
+            const w = (attackT - 0.30) / 0.35;
+            const stomp = Math.sin(w * Math.PI);
+            const leadIsLeft = dir > 0;
+            if (leadIsLeft) {
+              legL.thigh.rotation.x = -0.60 * stomp;
+              legL.shin.rotation.x  =  0.40 * stomp;
+              legR.thigh.rotation.x =  0.25 * stomp;
+              legR.shin.rotation.x  =  0.15 * stomp;
+            } else {
+              legR.thigh.rotation.x = -0.60 * stomp;
+              legR.shin.rotation.x  =  0.40 * stomp;
+              legL.thigh.rotation.x =  0.25 * stomp;
+              legL.shin.rotation.x  =  0.15 * stomp;
+            }
+            root.position.y -= 0.06 * stomp;
+          }
+
+          // Head tracks the strike during mid-release.
+          if (dir !== 0 && attackT > 0.20 && attackT < 0.80) {
+            const w = (attackT - 0.20) / 0.60;
+            const tracking = Math.sin(w * Math.PI);
+            head.rotation.y = -dir * 0.35 * tracking;
+            helm.rotation.y = -dir * 0.35 * tracking;
+            head.rotation.x += 0.14 * tracking;
+          }
+
+          // Left arm reacts too — supports the swing for two-hand grip, drives
+          // weight forward for one-hand. Visible counter-motion.
+          if (grip === "two-hand") {
+            // Both hands grip the weapon: left arm tracks the right shoulder twist.
+            const t2 = attackT < 0.60 ? (attackT - 0.30) / 0.30 : (1 - (attackT - 0.60) / 0.40);
+            const t2c = Math.max(0, Math.min(1, t2));
+            armL.rotation.x = -1.0 - 0.30 * t2c;
+            armL.rotation.z =  0.15 + 0.20 * t2c * (dir || 1);
+          } else if (grip !== "shield") {
+            // One-hand: opposite arm swings forward as counterweight.
+            const t2 = attackT < 0.60 ? (attackT - 0.30) / 0.30 : (1 - (attackT - 0.60) / 0.40);
+            const t2c = Math.max(0, Math.min(1, t2));
+            armL.rotation.x = -0.6 * t2c;
+            armL.rotation.z = -0.20 * t2c * (dir || 1);
           }
         }
       } else {
