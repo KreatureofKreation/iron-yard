@@ -777,6 +777,17 @@ function frame(t) {
     if (m < 0.01) state.shake.mag = 0;
   }
 
+  // Torch flicker.
+  const torches = scene.userData?._torches;
+  if (torches) {
+    const tNow = performance.now() / 1000;
+    for (const t of torches) {
+      const f = 0.85 + 0.15 * Math.sin(tNow * 12 + t.phase) + 0.10 * Math.sin(tNow * 23 + t.phase);
+      t.light.intensity = 1.0 + f * 0.6;
+      t.flame.scale.y = 0.85 + f * 0.30;
+    }
+  }
+
   // Physics tick (ragdolls + arena props).
   rapierStep(dt);
   tickRagdolls();

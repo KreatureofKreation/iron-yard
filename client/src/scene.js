@@ -118,5 +118,24 @@ export function buildScene() {
     scene.add(wgrp);
   }
 
+  // Corner torches: post + flame mesh + flickering point light.
+  const flameMat = new THREE.MeshBasicMaterial({ color: 0xffaa44, transparent: true, opacity: 0.85 });
+  const postMat  = new THREE.MeshStandardMaterial({ color: 0x3a2a1a, roughness: 0.9 });
+  const torches  = [];
+  const cornerOff = halfS - 1.2;
+  for (const [x, z] of [[-cornerOff,-cornerOff],[cornerOff,-cornerOff],[cornerOff,cornerOff],[-cornerOff,cornerOff]]) {
+    const post = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.08, 2.4, 6), postMat);
+    post.position.set(x, 1.2, z);
+    post.castShadow = true; scene.add(post);
+    const flame = new THREE.Mesh(new THREE.ConeGeometry(0.18, 0.42, 8), flameMat);
+    flame.position.set(x, 2.55, z);
+    scene.add(flame);
+    const light = new THREE.PointLight(0xffb050, 1.2, 14, 1.6);
+    light.position.set(x, 2.55, z);
+    scene.add(light);
+    torches.push({ flame, light, baseY: 2.55, phase: Math.random() * Math.PI * 2 });
+  }
+  scene.userData._torches = torches;
+
   return { scene, sun };
 }
