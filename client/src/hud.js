@@ -1,4 +1,5 @@
 // HUD overlays. All ID references match index.html.
+import * as SFX from "./audio.js";
 export const HUD = {
   setHp(cur, max = 100) {
     const f = document.getElementById("hp-fill");
@@ -179,6 +180,11 @@ export const HUD = {
     if (phase === "countdown") {
       const sLeft = Math.ceil(phaseMsLeft / 1000);
       el.textContent = `R${round} starts in ${sLeft}…`;
+      // Beep once per second of the countdown (final second higher pitched).
+      if (this._lastCountSec !== sLeft) {
+        this._lastCountSec = sLeft;
+        if (sLeft > 0 && sLeft <= 5) SFX.beep(sLeft === 1 ? 1300 : 700);
+      }
       // Big banner countdown.
       const big = document.getElementById("banner");
       if (big) {

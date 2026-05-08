@@ -237,6 +237,20 @@ export function click() {
   o.start(t0); o.stop(t0 + 0.07);
 }
 
+// Countdown beep — short tick.
+export function beep(pitch = 800) {
+  if (!unlocked) return;
+  ensureCtx(); if (!ctx) return;
+  const out = master;
+  const t0 = ctx.currentTime;
+  const o = ctx.createOscillator();
+  o.type = "square";
+  o.frequency.value = pitch;
+  const e = envGain(t0, 0.001, 0.10, 0.18);
+  o.connect(e).connect(out);
+  o.start(t0); o.stop(t0 + 0.13);
+}
+
 // Victory fanfare — short heroic two-tone.
 export function fanfare() {
   if (!unlocked) return;
