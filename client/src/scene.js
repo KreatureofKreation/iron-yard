@@ -72,9 +72,12 @@ export function buildScene() {
     scene.add(m);
   }
 
-  // Weapon racks: a small post + glowing ring marker per rack.
+  // Weapon racks: a small post + glowing ring marker + a stylized weapon hovering over.
   const rackPostMat = new THREE.MeshStandardMaterial({ color: 0x6a4a30, roughness: 0.9 });
   const rackRingMat = new THREE.MeshBasicMaterial({ color: 0x9adfff, transparent: true, opacity: 0.45, side: THREE.DoubleSide });
+  const bladeMat   = new THREE.MeshStandardMaterial({ color: 0xdfe5ee, metalness: 0.85, roughness: 0.25 });
+  const gripMat    = new THREE.MeshStandardMaterial({ color: 0x2a1c12, roughness: 0.95 });
+  const guardMat   = new THREE.MeshStandardMaterial({ color: 0x9a7a3a, metalness: 0.7, roughness: 0.4 });
   for (const rk of (RUNTIME.arena.racks || [])) {
     const post = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.10, 1.2, 6), rackPostMat);
     post.position.set(rk.x, 0.6, rk.z);
@@ -84,6 +87,35 @@ export function buildScene() {
     ring.rotation.x = -Math.PI / 2;
     ring.position.set(rk.x, 0.05, rk.z);
     scene.add(ring);
+    // Weapon mesh stuck on top of post.
+    const wgrp = new THREE.Group();
+    wgrp.position.set(rk.x, 1.30, rk.z);
+    wgrp.rotation.z = Math.PI;          // blade up by flipping
+    if (rk.weapon === "mace") {
+      const grip = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.025, 0.55, 8), gripMat);
+      grip.position.y = 0.275;
+      const ball = new THREE.Mesh(new THREE.IcosahedronGeometry(0.12, 1), guardMat);
+      ball.position.y = 0.55 + 0.10;
+      wgrp.add(grip); wgrp.add(ball);
+    } else if (rk.weapon === "spear") {
+      const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.025, 1.85, 8), gripMat);
+      shaft.position.y = 0.925;
+      const tip = new THREE.Mesh(new THREE.ConeGeometry(0.045, 0.25, 8), bladeMat);
+      tip.position.y = 1.85 + 0.125;
+      wgrp.add(shaft); wgrp.add(tip);
+    } else {
+      const grip = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.025, rk.weapon === "longsword" ? 0.30 : 0.20, 8), gripMat);
+      grip.position.y = (rk.weapon === "longsword" ? 0.30 : 0.20) / 2;
+      const guard = new THREE.Mesh(new THREE.BoxGeometry(rk.weapon === "longsword" ? 0.26 : 0.22, 0.025, 0.04), guardMat);
+      guard.position.y = (rk.weapon === "longsword" ? 0.30 : 0.20);
+      const blade = new THREE.Mesh(
+        new THREE.BoxGeometry(0.05, rk.weapon === "longsword" ? 1.00 : 0.92, 0.012),
+        bladeMat,
+      );
+      blade.position.y = (rk.weapon === "longsword" ? 0.30 : 0.20) + (rk.weapon === "longsword" ? 1.00 : 0.92) / 2;
+      wgrp.add(grip); wgrp.add(guard); wgrp.add(blade);
+    }
+    scene.add(wgrp);
   }
 
   return { scene, sun };
