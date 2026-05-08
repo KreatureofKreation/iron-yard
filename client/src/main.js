@@ -967,8 +967,8 @@ function updateNameplates() {
     if ((r.disarmedMsLeft || 0) > 0) status.push("DISARM");
     if ((r.bleedMsLeft || 0) > 0)    status.push("BLEED");
     if ((r.crippleMsLeft || 0) > 0)  status.push("LEG");
-    const sx = status.length ? ` <span style="color:#ff8050;">${status.join(" ")}</span>` : "";
-    div.querySelector(".name").innerHTML = `${escapeHtml(r.name)} · ${escapeHtml(r.weaponKey || "")}${sx}`;
+    const statusHtml = status.length ? ` <span style="color:#ff8050;">${status.join(" ")}</span>` : "";
+    div.querySelector(".name").innerHTML = `${escapeHtml(r.name)} · ${escapeHtml(r.weaponKey || "")}${statusHtml}`;
     div.querySelector(".hp-mini-fill").style.width = Math.max(0, Math.min(100, (r.hp / (RUNTIME.player.hp || 100)) * 100)).toFixed(1) + "%";
     const staMax = (RUNTIME.player.stamina || 100);
     const sta = Math.max(0, Math.min(100, ((r.stamina ?? staMax) / staMax) * 100));
