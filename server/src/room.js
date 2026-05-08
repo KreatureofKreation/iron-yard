@@ -13,6 +13,11 @@ export class Room {
     this.players = new Map();
     this.spectators = new Set();
     this.physics = new PhysicsWorld();
+    this.physics.spawnArenaProps([
+      { x: -10, y: 0, z: -10 }, { x:  10, y: 0, z: -10 },
+      { x: -10, y: 0, z:  10 }, { x:  10, y: 0, z:  10 },
+      { x:   0, y: 0, z: -12 }, { x:   0, y: 0, z:  12 },
+    ]);
     this.tick = 0;
     this.lastTickMs = Date.now();
     this.spawns = spawnPoints();
@@ -438,6 +443,7 @@ export class Room {
     }
     return {
       t: "snap", tick: this.tick, ts: Date.now(), players,
+      props: this.physics.propsState(),
       match: {
         phase: this.matchPhase,
         winnerId: this.winnerId,

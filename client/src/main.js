@@ -204,13 +204,7 @@ net.on("welcome", (m) => {
     state.cameraYaw = Math.atan2(m.you.spawnPos.x, m.you.spawnPos.z);
   }
   scene = buildScene().scene;
-  clearArenaProps(scene);
-  const propPositions = [
-    { x: -10, y: 0, z: -10 }, { x:  10, y: 0, z: -10 },
-    { x: -10, y: 0, z:  10 }, { x:  10, y: 0, z:  10 },
-    { x:   0, y: 0, z: -12 }, { x:   0, y: 0, z:  12 },
-  ];
-  spawnArenaProps(scene, propPositions);
+  // Server-authoritative props: visual meshes built lazily as they appear in snap.
   // Spectators have no local rig; camera will pick a target each frame.
   if (!state.spectator) {
     const pal = paletteFor(m.id, state.colorPick);
@@ -320,6 +314,9 @@ net.on("snap", (m) => {
     r.score = p.score;
     r.deaths = p.deaths;
   }
+
+  // Server-authoritative arena props.
+  if (m.props) syncServerProps(m.props);
 
   // Match state.
   if (m.match) {
@@ -889,6 +886,37 @@ function interpolateRemote(r, renderTime) {
     r.rig.root.position.y = 0.0;
   } else {
     r.rig.root.position.y = pos.y;
+  }
+}
+
+// Server-authoritative arena props: build/sync from snap.props each frame.
+const serverPropMeshes = [];
+function syncServerProps(propsArr) {
+  if (!propsArr) return;
+  // Lazy-build meshes the first time we see N props.
+  while (serverPropMeshes.length < propsArr.length) {
+    const radius = 0.45, height = 0.95;
+    const grp = new THREE.Group();
+    const mat = new THREE.MeshStandardMaterial({ color: 0x6a4a30, roughness: 0.9 });
+    const ringMat = new THREE.MeshStandardMaterial({ color: 0x3a2a1a, roughness: 0.9 });
+    const m = new THREE.Mesh(new THREE.CylinderGeometry(radius, radius, height, 12), mat);
+    m.castShadow = true; m.receiveShadow = true;
+    grp.add(m);
+    for (const off of [-0.30, 0, 0.30]) {
+      const r = new THREE.Mesh(new THREE.TorusGeometry(radius * 0.96, 0.04, 6, 16), ringMat);
+      r.position.y = off;
+      r.rotation.x = Math.PI / 2;
+      grp.add(r);
+    }
+    scene.add(grp);
+    serverPropMeshes.push(grp);
+  }
+  for (let i = 0; i < propsArr.length; i++) {
+    const p = propsArr[i];
+    const m = serverPropMeshes[i];
+    if (!m) continue;
+    m.position.set(p.pos.x, p.pos.y, p.pos.z);
+    m.quaternion.set(p.rot.x, p.rot.y, p.rot.z, p.rot.w);
   }
 }
 

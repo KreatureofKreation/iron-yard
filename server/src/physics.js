@@ -36,6 +36,7 @@ export class PhysicsWorld {
     this.bodies = new Map();         // playerId -> { body, collider }
     this.torsos = new Map();         // playerId -> { body, joint } — active ragdoll torso
     this.heads  = new Map();         // playerId -> { body, joint } — head jointed to torso
+    this.props  = [];                // dynamic arena props (barrels): { body }
     this.colliderToPlayerSword = new Map();  // colliderHandle -> playerId (attacker)
     this.colliderToPlayerBody  = new Map();  // colliderHandle -> playerId (victim)
     // Per-tick contact register: attackerId -> { victimId -> impactSpeed }
@@ -319,6 +320,33 @@ export class PhysicsWorld {
     const sw = this.swords.get(playerId);
     if (!sw) return;
     sw.body.setGravityScale(on ? 1 : 0, true);
+  }
+
+  spawnArenaProps(positions) {
+    for (const p of positions) {
+      const radius = 0.45, height = 0.95;
+      const desc = RAPIER.RigidBodyDesc.dynamic()
+        .setTranslation(p.x, p.y + height / 2 + 0.2, p.z)
+        .setLinearDamping(0.7).setAngularDamping(0.9);
+      const body = this.world.createRigidBody(desc);
+      const cd = RAPIER.ColliderDesc.cylinder(height / 2, radius)
+        .setDensity(80)
+        .setFriction(0.95)
+        .setCollisionGroups(((1<<3) << 16) | 0xFFFF);   // collides with everything
+      this.world.createCollider(cd, body);
+      this.props.push({ body });
+    }
+  }
+
+  propsState() {
+    const out = [];
+    for (let i = 0; i < this.props.length; i++) {
+      const p = this.props[i];
+      const t = p.body.translation();
+      const r = p.body.rotation();
+      out.push({ pos: { x: t.x, y: t.y, z: t.z }, rot: { x: r.x, y: r.y, z: r.z, w: r.w } });
+    }
+    return out;
   }
 
   // Apply an instant impulse to the torso (e.g. on knockdown for visible flop).
