@@ -1290,6 +1290,7 @@ async function play() {
     SFX.startAmbientWind();
     requestAnimationFrame(frame);
     setInterval(() => net.sendPing(), 1000);
+    setInterval(() => HUD.setPing(net.rtt), 500);
   } catch (err) {
     HUD.setMenu(true, "could not connect — server offline?");
   }

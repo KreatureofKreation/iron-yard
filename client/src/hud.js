@@ -22,6 +22,24 @@ export const HUD = {
     const el = document.getElementById("stance");
     if (el) el.textContent = label;
   },
+  setPing(ms) {
+    let el = document.getElementById("ping-readout");
+    if (!el) {
+      el = document.createElement("div");
+      el.id = "ping-readout";
+      Object.assign(el.style, {
+        position: "absolute", right: "calc(180px + 2rem)", top: "8px",
+        background: "rgba(0,0,0,0.45)", border: "1px solid #333", borderRadius: "3px",
+        padding: ".15rem .5rem", color: "#9adfff", fontSize: ".75rem",
+        fontFamily: "ui-monospace, SFMono-Regular, monospace", pointerEvents: "none",
+      });
+      document.getElementById("hud")?.append(el);
+    }
+    const v = Math.round(ms || 0);
+    const color = v < 80 ? "#9adfff" : v < 200 ? "#ffd060" : "#ff7070";
+    el.style.color = color;
+    el.textContent = `${v}ms`;
+  },
   setDamageTotals(dealt, taken) {
     let el = document.getElementById("dmg-totals");
     if (!el) {
