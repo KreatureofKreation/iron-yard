@@ -969,6 +969,8 @@ function frame(t) {
         start: performance.now(),
         duration: attackTotalDuration(state.weaponKey, inp.attackTrigger),
       };
+      // Vocal grunt on windup so the attack is audibly committed.
+      SFX.grunt(0);
     }
 
     // Compute target weapon tip from attack state (or rest). Send target to server,

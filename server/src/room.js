@@ -292,9 +292,18 @@ export class Room {
     }
 
     // Respawn dead. After respawn, reset sword + torso/head to player's hand area.
+    // Bots also re-roll their weapon on respawn for combat variety.
     for (const p of this.players.values()) {
       if (!p.alive) {
         if (maybeRespawn(p, this.nextSpawn(), now)) {
+          if (p.bot) {
+            const newWeapon = pickBotWeapon();
+            if (newWeapon !== p.weaponKey) {
+              p.weaponKey = newWeapon;
+              const w = weaponOf(p);
+              this.physics.swapWeapon(p.id, w.mass, w.length);
+            }
+          }
           this.physics.resetSwordPos(p.id, { x: p.pos.x, y: p.pos.y + 1.4, z: p.pos.z });
           this.physics.resetRagPos(p.id, p.pos);
         }

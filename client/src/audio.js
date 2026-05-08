@@ -53,6 +53,24 @@ function noiseBuffer(durMs) {
   return buf;
 }
 
+// Brief vocal grunt on attack windup. Low body resonance + soft attack.
+export function grunt(pan = 0) {
+  if (!unlocked) return;
+  ensureCtx(); if (!ctx) return;
+  const out = panned(pan);
+  const t0 = ctx.currentTime;
+  const o = ctx.createOscillator();
+  o.type = "sawtooth";
+  o.frequency.setValueAtTime(140 + Math.random() * 40, t0);
+  o.frequency.exponentialRampToValueAtTime(80, t0 + 0.18);
+  const lp = ctx.createBiquadFilter();
+  lp.type = "lowpass";
+  lp.frequency.value = 380;
+  const e = envGain(t0, 0.02, 0.20, 0.10);
+  o.connect(lp).connect(e).connect(out);
+  o.start(t0); o.stop(t0 + 0.25);
+}
+
 // Air whoosh — band-passed noise sweep. speed 0..1.
 export function whoosh(speed = 0.5, pan = 0) {
   if (!unlocked) return;
