@@ -1244,6 +1244,7 @@ async function play() {
     net.send(joinMsg);
     HUD.setMenu(false);
     window.IRONYARD_INGAME = true;
+    SFX.startAmbientWind();
     requestAnimationFrame(frame);
     setInterval(() => net.sendPing(), 1000);
   } catch (err) {

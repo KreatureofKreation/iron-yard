@@ -237,6 +237,36 @@ export function click() {
   o.start(t0); o.stop(t0 + 0.07);
 }
 
+// Ambient wind loop. Idempotent — call once after unlock.
+let _windActive = false;
+export function startAmbientWind() {
+  if (_windActive) return;
+  ensureCtx(); if (!ctx) return;
+  if (!unlocked) return;
+  _windActive = true;
+  // Long noise buffer played in loop with band-pass filter.
+  const buf = noiseBuffer(2000);
+  const src = ctx.createBufferSource();
+  src.buffer = buf;
+  src.loop = true;
+  const bp = ctx.createBiquadFilter();
+  bp.type = "bandpass";
+  bp.frequency.value = 380;
+  bp.Q.value = 0.9;
+  // Slow LFO modulates filter freq for organic wind feel.
+  const lfo = ctx.createOscillator();
+  lfo.type = "sine";
+  lfo.frequency.value = 0.18;
+  const lfoGain = ctx.createGain();
+  lfoGain.gain.value = 250;
+  lfo.connect(lfoGain).connect(bp.frequency);
+  const g = ctx.createGain();
+  g.gain.value = 0.06;
+  src.connect(bp).connect(g).connect(master);
+  src.start();
+  lfo.start();
+}
+
 // Countdown beep — short tick.
 export function beep(pitch = 800) {
   if (!unlocked) return;
